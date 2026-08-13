@@ -77,4 +77,4 @@ function goalWeightForDate(phases, dateStr) {
   return Math.round((phase.startWeight + days * dailyRate) * 100) / 100;
 }
 
-module.exports = { toUTC, daysBetween, averageWeight, findPhase, goalWeightForDate };
+export { toUTC, daysBetween, averageWeight, findPhase, goalWeightForDate };

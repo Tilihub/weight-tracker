@@ -1,5 +1,5 @@
-const assert = require('assert');
-const { averageWeight, findPhase, goalWeightForDate } = require('./trend-line');
+import assert from 'node:assert';
+import { averageWeight, findPhase, goalWeightForDate } from './trend-line.js';
 
 // --- fake daily entries, six days leading into a phase start ---
 const entries = [

@@ -1,0 +1,208 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1" />
+<title>Weight Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link
+  href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap"
+  rel="stylesheet"
+/>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<style>
+  :root {
+    --paper: #EDEEE9;
+    --surface: #FBFBF9;
+    --ink: #1C2321;
+    --ink-soft: #6B716C;
+    --hairline: #D8D6CE;
+    --bulk: #C98A3E;
+    --cut: #3E6B8A;
+    --maintain: #6B7C6B;
+  }
+
+  * { box-sizing: border-box; }
+
+  html, body {
+    margin: 0;
+    background: var(--paper);
+    color: var(--ink);
+    font-family: 'Instrument Sans', sans-serif;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  main {
+    max-width: 480px;
+    margin: 0 auto;
+    padding: 28px 20px 60px;
+  }
+
+  header { margin-bottom: 24px; }
+
+  .eyebrow {
+    margin: 0 0 4px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    letter-spacing: 0.14em;
+    color: var(--ink-soft);
+  }
+
+  h1 {
+    margin: 0;
+    font-size: 28px;
+    font-weight: 600;
+    letter-spacing: -0.01em;
+  }
+
+  .entry-card, .chart-card, .phases-editor {
+    background: var(--surface);
+    border: 1px solid var(--hairline);
+    border-radius: 10px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .entry-row {
+    display: flex;
+    align-items: baseline;
+    gap: 8px;
+    border-bottom: 1px solid var(--hairline);
+    padding-bottom: 12px;
+    margin-bottom: 14px;
+  }
+
+  #weight-input {
+    flex: 1;
+    min-width: 0;
+    border: none;
+    background: transparent;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 40px;
+    font-weight: 500;
+    color: var(--ink);
+    outline: none;
+  }
+  #weight-input::-webkit-outer-spin-button,
+  #weight-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+  #weight-input::placeholder { color: #B7BBB2; }
+
+  .unit {
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 16px;
+    color: var(--ink-soft);
+  }
+
+  button {
+    width: 100%;
+    padding: 14px;
+    border: none;
+    border-radius: 8px;
+    background: var(--ink);
+    color: var(--paper);
+    font-family: 'Instrument Sans', sans-serif;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  button:active { transform: scale(0.99); }
+  button:focus-visible, input:focus-visible, summary:focus-visible {
+    outline: 2px solid var(--cut);
+    outline-offset: 2px;
+  }
+
+  .feedback {
+    min-height: 18px;
+    margin: 10px 0 0;
+    font-size: 13px;
+    color: var(--ink-soft);
+  }
+
+  .chart-card { padding: 16px 12px 8px; }
+  #chart { width: 100%; }
+
+  .legend {
+    display: flex;
+    gap: 16px;
+    list-style: none;
+    padding: 12px 8px 0;
+    margin: 0;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 11px;
+    color: var(--ink-soft);
+  }
+  .dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 5px; }
+  .dot.bulk { background: var(--bulk); }
+  .dot.cut { background: var(--cut); }
+  .dot.maintain { background: var(--maintain); }
+
+  .phases-editor summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+  }
+  .phases-editor .note {
+    font-size: 12px;
+    color: var(--ink-soft);
+    line-height: 1.5;
+  }
+  #phases-json {
+    width: 100%;
+    min-height: 160px;
+    font-family: 'IBM Plex Mono', monospace;
+    font-size: 12px;
+    background: var(--paper);
+    border: 1px solid var(--hairline);
+    border-radius: 6px;
+    padding: 10px;
+    margin: 10px 0;
+    resize: vertical;
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    * { transition: none !important; animation: none !important; }
+  }
+</style>
+</head>
+<body>
+  <main>
+    <header>
+      <p class="eyebrow">DAILY LOG</p>
+      <h1>Weight</h1>
+    </header>
+
+    <section class="entry-card">
+      <div class="entry-row">
+        <label for="weight-input" style="position:absolute; left:-9999px;">Today's weight</label>
+        <input id="weight-input" type="number" inputmode="decimal" step="0.1" autofocus />
+        <span class="unit">lbs</span>
+      </div>
+      <button id="save-btn">Save today</button>
+      <p id="save-feedback" class="feedback" aria-live="polite"></p>
+    </section>
+
+    <section class="chart-card">
+      <canvas id="chart" height="220"></canvas>
+      <ul class="legend">
+        <li><span class="dot bulk"></span>Bulk</li>
+        <li><span class="dot cut"></span>Cut</li>
+        <li><span class="dot maintain"></span>Maintenance</li>
+      </ul>
+    </section>
+
+    <details class="phases-editor">
+      <summary>Manage phases (raw JSON — temporary editor)</summary>
+      <p class="note">
+        Stopgap until the real phase-editor form (with the average-weight auto-fill) exists.
+        Each entry: <code>{"startDate":"YYYY-MM-DD","endDate":null,"type":"bulk|cut|maintenance","weeklyRate":0.25,"startWeight":180}</code>
+      </p>
+      <textarea id="phases-json" spellcheck="false"></textarea>
+      <button id="save-phases-btn">Save phases</button>
+      <p id="phases-feedback" class="feedback" aria-live="polite"></p>
+    </details>
+  </main>
+
+  <script type="module" src="./app.js"></script>
+</body>
+</html>
