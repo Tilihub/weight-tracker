@@ -183,14 +183,24 @@ function handleSave() {
 function handleSavePhases() {
   const textarea = document.getElementById('phases-json');
   const feedback = document.getElementById('phases-feedback');
+
+  let parsed;
   try {
-    const parsed = JSON.parse(textarea.value);
+    parsed = JSON.parse(textarea.value);
     if (!Array.isArray(parsed)) throw new Error('top level must be an array');
-    savePhases(parsed);
-    feedback.textContent = 'Phases saved.';
-    render();
   } catch (err) {
     feedback.textContent = `Invalid JSON: ${err.message}`;
+    return;
+  }
+
+  savePhases(parsed);
+  feedback.textContent = 'Phases saved.';
+
+  try {
+    render();
+  } catch (err) {
+    // Data was saved fine — this is a rendering problem, not a JSON problem.
+    feedback.textContent = `Saved, but the chart failed to draw: ${err.message}`;
   }
 }
 

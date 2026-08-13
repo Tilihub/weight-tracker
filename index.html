@@ -10,7 +10,7 @@
   href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=Instrument+Sans:wght@400;500;600;700&display=swap"
   rel="stylesheet"
 />
-<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="./vendor/chart.umd.js"></script>
 <style>
   :root {
     --paper: #EDEEE9;
@@ -120,7 +120,8 @@
   }
 
   .chart-card { padding: 16px 12px 8px; }
-  #chart { width: 100%; }
+  .chart-wrap { position: relative; height: 260px; width: 100%; }
+  #chart { width: 100% !important; height: 100% !important; }
 
   .legend {
     display: flex;
@@ -176,14 +177,16 @@
       <div class="entry-row">
         <label for="weight-input" style="position:absolute; left:-9999px;">Today's weight</label>
         <input id="weight-input" type="number" inputmode="decimal" step="0.1" autofocus />
-        <span class="unit">kgs</span>
+        <span class="unit">kg</span>
       </div>
       <button id="save-btn">Save today</button>
       <p id="save-feedback" class="feedback" aria-live="polite"></p>
     </section>
 
     <section class="chart-card">
-      <canvas id="chart" height="220"></canvas>
+      <div class="chart-wrap">
+        <canvas id="chart"></canvas>
+      </div>
       <ul class="legend">
         <li><span class="dot bulk"></span>Bulk</li>
         <li><span class="dot cut"></span>Cut</li>
