@@ -53,10 +53,21 @@ function buildDateRange(entries, phases) {
     ...phases.filter((p) => p.endDate).map((p) => p.endDate),
     today,
   ];
-  if (allDates.length === 0) return [today];
+
+  const badDate = allDates.find((d) => !isValidDateStr(d));
+  if (badDate !== undefined) {
+    throw new Error(`Invalid date "${badDate}" in entries or phases (expected YYYY-MM-DD).`);
+  }
 
   const min = allDates.reduce((a, b) => (a < b ? a : b));
   const max = allDates.reduce((a, b) => (a > b ? a : b));
+
+  const span = daysBetween(min, max);
+  if (span > MAX_RANGE_DAYS) {
+    throw new Error(
+      `Date range from ${min} to ${max} is ${span} days — over the ${MAX_RANGE_DAYS}-day safety cap. Check for a typo'd date.`
+    );
+  }
 
   const range = [];
   let cursor = min;
