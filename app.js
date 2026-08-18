@@ -1,4 +1,6 @@
-import { goalWeightForDate, findPhase } from './trend-line.js';
+import { goalWeightForDate, findPhase, daysBetween, isValidDateStr } from './trend-line.js';
+
+const MAX_RANGE_DAYS = 3650; // ~10 years — a bad date should fail fast, not walk the loop for years
 
 const ENTRIES_KEY = 'entries';
 const PHASES_KEY = 'phases';
