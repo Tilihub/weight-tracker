@@ -213,6 +213,7 @@ function handleSavePhases() {
   savePhases(parsed);
   feedback.textContent = 'Phases saved.';
   safeRender(feedback, 'Saved, but the chart failed to draw');
+}
 
 // ---------- wire up ----------
 
