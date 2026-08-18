@@ -1,5 +1,5 @@
 import assert from 'node:assert';
-import { averageWeight, findPhase, goalWeightForDate } from './trend-line.js';
+import { averageWeight, findPhase, goalWeightForDate, isValidDateStr } from './trend-line.js';
 
 // --- fake daily entries, six days leading into a phase start ---
 const entries = [
@@ -72,3 +72,16 @@ assert.strictEqual(overlapResult.startDate, '2026-02-01');
 console.log('PASS: overlap resolved to latest-starting phase');
 
 console.log('\nAll tests passed.');
+
+// --- isValidDateStr ---
+assert.strictEqual(isValidDateStr('2026-01-01'), true);
+console.log('PASS: isValidDateStr accepts a real date');
+
+assert.strictEqual(isValidDateStr('YYYY-MM-DD'), false);
+console.log('PASS: isValidDateStr rejects placeholder text');
+
+assert.strictEqual(isValidDateStr('2026-13-01'), false);
+console.log('PASS: isValidDateStr rejects an impossible month');
+
+assert.strictEqual(isValidDateStr('2026-1-1'), false);
+console.log('PASS: isValidDateStr rejects non-zero-padded dates');
