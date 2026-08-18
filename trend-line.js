@@ -77,8 +77,6 @@ function goalWeightForDate(phases, dateStr) {
   return Math.round((phase.startWeight + days * dailyRate) * 100) / 100;
 }
 
-export { toUTC, daysBetween, averageWeight, findPhase, goalWeightForDate };
-
 /**
  * True if dateStr is a real calendar date in strict 'YYYY-MM-DD' form.
  * Rejects malformed strings (wrong shape, non-digits) and impossible
