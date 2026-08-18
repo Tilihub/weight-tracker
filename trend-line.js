@@ -78,3 +78,20 @@ function goalWeightForDate(phases, dateStr) {
 }
 
 export { toUTC, daysBetween, averageWeight, findPhase, goalWeightForDate };
+
+/**
+ * True if dateStr is a real calendar date in strict 'YYYY-MM-DD' form.
+ * Rejects malformed strings (wrong shape, non-digits) and impossible
+ * dates (month 13, Feb 30, etc). The toISOString round-trip check is a
+ * defensive backstop: if a JS engine ever parsed an out-of-range
+ * component leniently instead of returning Invalid Date, the round trip
+ * would still catch the mismatch.
+ */
+function isValidDateStr(dateStr) {
+  if (typeof dateStr !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(dateStr)) return false;
+  const d = toUTC(dateStr);
+  if (Number.isNaN(d.getTime())) return false;
+  return d.toISOString().slice(0, 10) === dateStr;
+}
+
+export { toUTC, daysBetween, averageWeight, findPhase, goalWeightForDate, isValidDateStr };
