@@ -190,7 +190,8 @@ function handleSave() {
   input.value = '';
   input.placeholder = String(weight);
   feedback.textContent = existingIdx >= 0 ? 'Updated today\u2019s entry.' : 'Saved.';
-  render();
+  // render();
+  safeRender(feedback, 'Saved, but the chart failed to draw');
 }
 
 function handleSavePhases() {
@@ -209,13 +210,9 @@ function handleSavePhases() {
   savePhases(parsed);
   feedback.textContent = 'Phases saved.';
 
-  try {
-    render();
-  } catch (err) {
-    // Data was saved fine — this is a rendering problem, not a JSON problem.
-    feedback.textContent = `Saved, but the chart failed to draw: ${err.message}`;
-  }
-}
+  savePhases(parsed);
+  feedback.textContent = 'Phases saved.';
+  safeRender(feedback, 'Saved, but the chart failed to draw');
 
 // ---------- wire up ----------
 
@@ -226,4 +223,15 @@ document.getElementById('weight-input').addEventListener('keydown', (e) => {
 document.getElementById('save-phases-btn').addEventListener('click', handleSavePhases);
 document.getElementById('phases-json').value = JSON.stringify(loadPhases(), null, 2);
 
-render();
+safeRender(document.getElementById('save-feedback'), 'Chart failed to draw');
+  
+function safeRender(feedbackEl, prefix) {
+  try {
+    render();
+  } catch (err) {
+    console.error(err);
+    if (feedbackEl) {
+      feedbackEl.textContent = prefix ? `${prefix}: ${err.message}` : err.message;
+    }
+  }
+}
