@@ -1,4 +1,4 @@
-const CACHE_NAME = "weight-tracker-v3";
+const CACHE_NAME = "weight-tracker-v4";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -31,5 +31,19 @@ self.addEventListener("activate", (event) => {
         );
       })
       .then(() => self.clients.claim()),
+  );
+});
+
+self.addEventListener("fetch", (event) => {
+  const requestOrigin = new URL(event.request.url).origin;
+
+  if (requestOrigin !== self.location.origin) {
+    return;
+  }
+
+  event.respondWith(
+    caches.match(event.request).then((response) => {
+      return response || fetch(event.request);
+    }),
   );
 });
