@@ -234,3 +234,9 @@ function safeRender(feedbackEl, prefix) {
     }
   }
 }
+
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("./sw.js") 
+  .then((result)=>{console.log(result)})
+  .catch((error)=>{console.error(error)})
+}

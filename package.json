@@ -5,5 +5,8 @@
   "type": "module",
   "scripts": {
     "test": "node trend-line.test.js"
+  },
+  "devDependencies": {
+    "prettier": "^3.9.6"
   }
 }
