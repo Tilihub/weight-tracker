@@ -12,7 +12,21 @@ const dbReady = new Promise((resolve, reject) => {
 });
 
 function addWeight(date, weight) {
-  dbReady.then((db) => {
-    console.log(db);
+  return dbReady.then((db) => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction("weighIns", "readwrite");
+      const data = {
+        date: date,
+        weight: weight,
+        modified: Date.now(),
+      };
+      tx.objectStore("weighIns").put(data);
+      tx.oncomplete = () => {
+        resolve(data);
+      };
+      tx.onerror = () => {
+        reject(tx.error);
+      };
+    });
   });
 }
