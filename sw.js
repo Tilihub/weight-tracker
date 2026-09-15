@@ -1,4 +1,4 @@
-const CACHE_NAME = "weight-tracker-v4";
+const CACHE_NAME = "weight-tracker-v5";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
@@ -7,6 +7,7 @@ self.addEventListener("install", (event) => {
       return cache.addAll([
         "./",
         "./index.html",
+        "./db.js",
         "./app.js",
         "./trend-line.js",
         "./manifest.json",
