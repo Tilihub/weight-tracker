@@ -1,4 +1,4 @@
-const CACHE_NAME = "weight-tracker-v7";
+const CACHE_NAME = "weight-tracker-v8";
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
