@@ -1,59 +1,81 @@
-// Storage layer. Owns the IndexedDB connection and every read/write to it.
-// Every function here returns a promise. app.js talks to the store only
-// through addWeight / getWeight / getAllWeights / importWeights.
+// Storage layer. Owns the IndexedDB connection and every read and write to it.
+// The exported functions are the whole API; everything else is internal.
+// Every exported function returns a promise.
+
+// --- types ---
+// WeightInput is a weigh-in as it arrives, from the UI or an imported file.
+// WeightRecord is what gets stored: the same, plus when it was last written.
+type WeightInput = {
+  date: string;
+  weight: number;
+};
+
+type WeightRecord = WeightInput & { modified: number };
 
 // --- validation ---
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Validators return null when valid, or a message string when not.
 // They never throw and never reject — the caller decides how to report.
-function validateWeight(weight) {
+function validateWeight(weight: unknown) {
   if (Number.isFinite(weight)) {
     return null;
   }
   return "weight must be a finite number";
 }
 
-function validateDate(date) {
+function validateDate(date: unknown) {
   if (typeof date === "string" && ISO_DATE.test(date)) {
     return null;
   }
   return "date must be YYYY-MM-DD";
 }
 
-function validateRecord(record) {
+function validateRecord(record: unknown) {
   if (!record || typeof record !== "object") {
     return "record must be an object";
+  }
+  if (!("date" in record) || !("weight" in record)) {
+    return "record must have a date and weight";
   }
   return validateDate(record.date) ?? validateWeight(record.weight);
 }
 
 // --- connection ---
+// TypeScript can't check object store names, so every use goes through this
+// constant. Keep the value as it is: existing data is stored under that name.
+const WEIGH_INS_STORE = "weighIns";
+
 // One connection, opened once at load. Wrapped in a promise so callers
 // made before the database is ready simply wait instead of failing.
-// Known gap: an error thrown inside onupgradeneeded escapes this promise,
-// leaving it pending forever. onblocked is not handled either.
-const dbReady = new Promise((resolve, reject) => {
+// Known gap: onblocked isn't handled. If a future version bump runs while
+// another tab still has the database open, opening waits until that tab
+// closes, and so does everything that uses dbReady.
+const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
   const req = indexedDB.open("weightTracker", 1);
-  req.onsuccess = (event) => {
-    resolve(event.target.result);
+  req.onsuccess = () => {
+    resolve(req.result);
   };
-  req.onupgradeneeded = (event) => {
-    event.target.result.createObjectStore("weighIns", { keyPath: "date" });
+  req.onupgradeneeded = () => {
+    req.result.createObjectStore(WEIGH_INS_STORE, { keyPath: "date" });
   };
-  req.onerror = (event) => {
-    reject(event.target.error);
+  req.onerror = () => {
+    reject(req.error ?? new Error("the request returned an error"));
   };
 });
 
 // --- operations ---
+// Failures reject from the transaction's abort event, not its error event:
+// tx.error is only set once the transaction has aborted, and error fires
+// before that. The fallback covers a manual abort(), where tx.error stays null.
 
-// Resolves with the stored record. Rejects on a bad date or weight.
+// Resolves with the stored record. Rejects on a bad date or weight, or if the
+// write fails.
 // modified is stamped here, not passed in, so no caller can forget it.
 // It means "when this row was last written", which is what the two-device
 // merge needs. The measurement date is `date`.
-function addWeight(date, weight) {
-  const record = {
+export function addWeight(date: string, weight: number): Promise<WeightRecord> {
+  const record: WeightRecord = {
     date,
     weight,
     modified: Date.now(),
@@ -64,39 +86,39 @@ function addWeight(date, weight) {
   }
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction("weighIns", "readwrite");
-      tx.objectStore("weighIns").put(record);
+      const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
+      tx.objectStore(WEIGH_INS_STORE).put(record);
       // Resolve on the transaction, not the put request. A successful request
       // only means the write was queued — nothing is durable until the
       // transaction commits.
       tx.oncomplete = () => {
         resolve(record);
       };
-      tx.onerror = () => {
-        reject(tx.error);
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("could not open the database"));
       };
     });
   });
 }
 
 // Resolves with the stored record, or undefined if that date has none.
-// Rejects on a bad date.
-function getWeight(date) {
+// Rejects on a bad date, or if the read fails.
+export function getWeight(date: string): Promise<WeightRecord | undefined> {
   const dateError = validateDate(date);
   if (dateError) {
     return Promise.reject(new Error(dateError));
   }
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction("weighIns", "readonly");
-      const req = tx.objectStore("weighIns").get(date);
+      const tx = db.transaction(WEIGH_INS_STORE, "readonly");
+      const req = tx.objectStore(WEIGH_INS_STORE).get(date);
       // Reads resolve on the request, not the transaction — req.result is the
       // only place the data appears. A miss is not an error: result is undefined.
       req.onsuccess = () => {
         resolve(req.result);
       };
-      tx.onerror = () => {
-        reject(tx.error);
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("the transaction was aborted"));
       };
     });
   });
@@ -105,49 +127,46 @@ function getWeight(date) {
 // Resolves with an array of every record, empty if the store is empty.
 // Records come back in key order, which is chronological because the keys
 // are ISO date strings. No sorting needed downstream.
-function getAllWeights() {
+// Rejects if the read fails.
+export function getAllWeights(): Promise<WeightRecord[]> {
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction("weighIns", "readonly");
-      const req = tx.objectStore("weighIns").getAll();
+      const tx = db.transaction(WEIGH_INS_STORE, "readonly");
+      const req = tx.objectStore(WEIGH_INS_STORE).getAll();
       req.onsuccess = () => {
         resolve(req.result);
       };
-      tx.onerror = () => {
-        reject(tx.error);
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("could not open the database"));
       };
     });
   });
 }
 
 // Resolves with the number of records written. Rejects if any record fails
-// validation, in which case nothing is written at all.
-function importWeights(records) {
+// validation or the write fails; either way, nothing is written at all.
+export function importWeights(records: WeightInput[]): Promise<number> {
   // Validate everything before opening the transaction, so a bad record
   // means the database is never touched at all.
-  let idx = 0;
-  for (const record of records) {
+  for (const [i, record] of records.entries()) {
     const recordError = validateRecord(record);
     if (recordError) {
       return Promise.reject(
-        new Error(
-          `Record number: ${idx} raised an error because ${recordError}`,
-        ),
+        new Error(`records[${i}] raised an error because ${recordError}`),
       );
     }
-    idx += 1;
   }
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
-      const tx = db.transaction("weighIns", "readwrite");
-      const store = tx.objectStore("weighIns");
+      const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
+      const store = tx.objectStore(WEIGH_INS_STORE);
       const now = Date.now();
       // All puts must be queued in one synchronous pass. The transaction
       // auto-commits as soon as this code yields with nothing left queued,
       // so any await or .then() in here would close it underneath us.
       // One `now` for the whole batch marks these as a single import.
       for (const source of records) {
-        const record = {
+        const record: WeightRecord = {
           date: source.date,
           weight: source.weight,
           modified: now,
@@ -157,8 +176,8 @@ function importWeights(records) {
       tx.oncomplete = () => {
         resolve(records.length);
       };
-      tx.onerror = () => {
-        reject(tx.error);
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("the transaction was aborted"));
       };
     });
   });
