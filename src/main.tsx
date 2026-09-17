@@ -1,8 +1,9 @@
 import { createRoot } from "react-dom/client";
+import { App } from "./App";
 
 const element = document.getElementById("root");
 
 if (element === null) {
   throw new Error("element is null");
 }
-createRoot(element).render(<h1>heyyy</h1>);
+createRoot(element).render(App());
