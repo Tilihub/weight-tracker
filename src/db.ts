@@ -18,17 +18,27 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 // Validators return null when valid, or a message string when not.
 // They never throw and never reject — the caller decides how to report.
 function validateWeight(weight: unknown) {
-  if (Number.isFinite(weight)) {
-    return null;
+  if (typeof weight !== "number" || !Number.isFinite(weight)) {
+    return "weight must be a finite number";
   }
-  return "weight must be a finite number";
+  if (weight < 20 || weight > 300) {
+    return "weight must be between 20 and 300 kg";
+  }
+  return null;
 }
 
 function validateDate(date: unknown) {
-  if (typeof date === "string" && ISO_DATE.test(date)) {
-    return null;
+  if (typeof date !== "string" || !ISO_DATE.test(date)) {
+    return "date must be YYYY-MM-DD";
   }
-  return "date must be YYYY-MM-DD";
+  const [year, month, day] = date.split("-").map(Number);
+  const calenderDate = new Date(Date.UTC(year, month - 1, day))
+    .toISOString()
+    .slice(0, 10);
+  if (date !== calenderDate) {
+    return "date does not exist";
+  }
+  return null;
 }
 
 function validateRecord(record: unknown) {
