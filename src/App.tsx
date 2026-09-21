@@ -9,31 +9,37 @@ function localToday() {
   return `${year}-${month}-${day}`;
 }
 
+function errorToString(error: unknown) {
+  return error instanceof Error ? error.message : String(error);
+}
+
 function App() {
   const [weightText, setWeightText] = useState("");
   const [todayWeight, setTodayWeight] = useState<number | null>(null);
+  const [message, setMessage] = useState("");
 
   useEffect(() => {
     getWeight(localToday())
       .then((record) => setTodayWeight(record?.weight ?? null))
-      .catch((error) => console.log(error));
+      .catch((error) => setMessage(errorToString(error)));
   }, []);
 
   async function handleSave() {
-    const input = weightText.trim();
-    if (input === "") {
-      console.log("enter a weight");
+    const text = weightText.trim();
+    if (text === "") {
+      setMessage("enter a weight");
       return;
     }
 
-    const weight = Number(input);
+    const weight = Number(text);
     const date = localToday();
 
     try {
       const record = await addWeight(date, weight);
       setTodayWeight(record.weight);
+      setMessage("Weight saved");
     } catch (error) {
-      console.log(error instanceof Error ? error.message : String(error));
+      setMessage(errorToString(error));
     }
   }
 
@@ -46,10 +52,9 @@ function App() {
       />
       <button onClick={() => void handleSave()}>Save</button>
       <div>{localToday()}</div>
+      <div>{message}</div>
       <div>
-        {todayWeight !== null
-          ? `Today's weigh in is ${todayWeight}`
-          : "No weigh in today"}
+        {todayWeight !== null ? `${todayWeight} kg` : "No weigh in today"}
       </div>
     </>
   );
