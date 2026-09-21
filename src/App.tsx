@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { addWeight, getWeight } from "./db";
+import { addWeight, getAllWeights, getWeight, type WeightRecord } from "./db";
 
 // Today as YYYY-MM-DD from local date parts; toISOString() would give the UTC
 // day, which is the wrong one for part of every evening. Called at the moment
@@ -21,6 +21,7 @@ function errorToString(error: unknown) {
 function App() {
   const [weightText, setWeightText] = useState("");
   const [todayWeight, setTodayWeight] = useState<number | null>(null);
+  const [records, setRecords] = useState<WeightRecord[]>([]);
 
   // message is the outcome of an action; todayWeight is a fact about what's
   // stored. Kept apart so a failed save doesn't wipe the number off the screen.
@@ -32,6 +33,10 @@ function App() {
   useEffect(() => {
     getWeight(localToday())
       .then((record) => setTodayWeight(record?.weight ?? null))
+      .catch((error) => setMessage(errorToString(error)));
+
+    getAllWeights()
+      .then(setRecords)
       .catch((error) => setMessage(errorToString(error)));
   }, []);
 
@@ -69,6 +74,13 @@ function App() {
       <div>
         {todayWeight !== null ? `${todayWeight} kg` : "No weigh in today"}
       </div>
+      <ul>
+        {records.toReversed().map((record) => (
+          <li key={record.date}>
+            {record.date} - {record.weight}
+          </li>
+        ))}
+      </ul>
     </>
   );
 }

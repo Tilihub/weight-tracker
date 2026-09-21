@@ -10,7 +10,7 @@ type WeightInput = {
   weight: number;
 };
 
-type WeightRecord = WeightInput & { modified: number };
+export type WeightRecord = WeightInput & { modified: number };
 
 // --- validation ---
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
