@@ -44,7 +44,7 @@ function App() {
         value={weightText}
         onChange={(event) => setWeightText(event.target.value)}
       />
-      <button onClick={handleSave}>Save</button>
+      <button onClick={() => void handleSave()}>Save</button>
       <div>{localToday()}</div>
       <div>
         {todayWeight !== null
