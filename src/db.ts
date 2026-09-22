@@ -1,16 +1,17 @@
 // Storage layer. Owns the IndexedDB connection and every read and write to it.
 // The exported functions are the whole API; everything else is internal.
-// Every exported function returns a promise.
+// Every exported function returns a promise, including on bad input: bad
+// input rejects, it never throws.
 
 // --- types ---
-// WeightInput is a weigh-in as it arrives, from the UI or an imported file.
-// WeightRecord is what gets stored: the same, plus when it was last written.
-type WeightInput = {
+// A weigh-in as stored. `date` is the measurement day. `modified` is when
+// this row was last written — not when it was measured. It exists for the
+// two-device merge, which compares it to decide which copy of a date wins.
+export type WeightRecord = {
   date: string;
   weight: number;
+  modified: number;
 };
-
-export type WeightRecord = WeightInput & { modified: number };
 
 // --- validation ---
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -32,21 +33,26 @@ function validateDate(date: unknown) {
     return "date must be YYYY-MM-DD";
   }
   const [year, month, day] = date.split("-").map(Number);
-  const calenderDate = new Date(Date.UTC(year, month - 1, day))
+  const calendarDate = new Date(Date.UTC(year, month - 1, day))
     .toISOString()
     .slice(0, 10);
-  if (date !== calenderDate) {
+  if (date !== calendarDate) {
     return "date does not exist";
   }
   return null;
 }
 
+// `modified` is checked here because bulk writes take it from the caller,
+// and that caller's data can come from a file someone edited by hand.
 function validateRecord(record: unknown) {
   if (!record || typeof record !== "object") {
     return "record must be an object";
   }
-  if (!("date" in record) || !("weight" in record)) {
-    return "record must have a date and weight";
+  if (!("date" in record && "weight" in record && "modified" in record)) {
+    return "record must have a date, a weight and a modified time stamp";
+  }
+  if (!Number.isFinite(record.modified)) {
+    return "modified time stamp has wrong format";
   }
   return validateDate(record.date) ?? validateWeight(record.weight);
 }
@@ -81,9 +87,10 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
 
 // Resolves with the stored record. Rejects on a bad date or weight, or if the
 // write fails.
-// modified is stamped here, not passed in, so no caller can forget it.
-// It means "when this row was last written", which is what the two-device
-// merge needs. The measurement date is `date`.
+// modified is stamped here, not passed in, so the UI path can't forget it.
+// The bulk path is deliberately the opposite: putWeights writes modified
+// exactly as given, because a merge that restamped it would destroy the
+// only field it has to compare.
 export function addWeight(date: string, weight: number): Promise<WeightRecord> {
   const record: WeightRecord = {
     date,
@@ -153,11 +160,19 @@ export function getAllWeights(): Promise<WeightRecord[]> {
   });
 }
 
-// Resolves with the number of records written. Rejects if any record fails
-// validation or the write fails; either way, nothing is written at all.
-export function importWeights(records: WeightInput[]): Promise<number> {
+// Bulk insert-or-replace, keyed by date. Takes whole records: used for merge
+// results, and for the one-off history import, which stamps modified itself.
+// Resolves with the number of records written. Rejects if the input isn't an
+// array, if two records share a date, if any record fails validation, or if
+// the write fails — and in every case nothing is written at all.
+// Unknown fields are not rejected; they are stored as they arrive.
+export function putWeights(records: WeightRecord[]): Promise<number> {
+  if (!Array.isArray(records)) {
+    return Promise.reject(new Error("records must be an array"));
+  }
   // Validate everything before opening the transaction, so a bad record
   // means the database is never touched at all.
+  const dates = new Set<string>();
   for (const [i, record] of records.entries()) {
     const recordError = validateRecord(record);
     if (recordError) {
@@ -165,22 +180,22 @@ export function importWeights(records: WeightInput[]): Promise<number> {
         new Error(`records[${i}] raised an error because ${recordError}`),
       );
     }
+    // Two records for one date would collapse into a single put, silently
+    // dropping one and making the resolved count a lie.
+    if (dates.has(record.date)) {
+      return Promise.reject(new Error(`duplicate ${record.date}`));
+    }
+    dates.add(record.date);
   }
+
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
       const store = tx.objectStore(WEIGH_INS_STORE);
-      const now = Date.now();
       // All puts must be queued in one synchronous pass. The transaction
       // auto-commits as soon as this code yields with nothing left queued,
       // so any await or .then() in here would close it underneath us.
-      // One `now` for the whole batch marks these as a single import.
-      for (const source of records) {
-        const record: WeightRecord = {
-          date: source.date,
-          weight: source.weight,
-          modified: now,
-        };
+      for (const record of records) {
         store.put(record);
       }
       tx.oncomplete = () => {
