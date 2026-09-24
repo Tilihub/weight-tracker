@@ -1,14 +1,14 @@
 // The archive: the canonical copy of the history, one JSON file in a private
 // GitHub repo. This file owns its format and its trip to and from GitHub.
 
+import type { WeightRecord } from "./db";
+
 // Where the archive lives. A private repo, deliberately separate from this
 // public one: a leaked token can then reach the history, but not the code the
 // phone runs.
 const USERNAME = "Tilihub";
 const REPO = "weight-archive";
 const ARCHIVE_PATH = "archive.json";
-
-import type { WeightRecord } from "./db";
 
 // goals is unknown until the goals model exists. unknown rather than any, so
 // the first code to use it is forced to narrow instead of assuming.
@@ -17,6 +17,12 @@ export type Archive = {
   goals: unknown;
 };
 
+// Turns the archive file's text into something the rest of the app can trust.
+// JSON.parse returns any, so every field is established by hand here.
+// Types only: whether a date is a real calendar date and whether a weight is
+// plausible stay with db.ts's validators, which still run on what this makes.
+// Throws on anything it can't establish — a partial archive read is worse than
+// a failed one, because it looks like it worked.
 export function parseArchive(text: string): Archive {
   let parsed: unknown;
 
@@ -105,6 +111,10 @@ export function parseArchive(text: string): Archive {
   return { records, goals: parsed.goals };
 }
 
+// Indented so each record gets its own lines, and a commit's diff shows only
+// the rows that changed; one-line JSON would diff as a single huge line. The
+// final newline matches what editors save, so a hand edit doesn't show up as
+// a change to the last line.
 export function serializeArchive(archive: Archive): string {
   return `${JSON.stringify(archive, null, 2)}\n`;
 }
@@ -138,41 +148,29 @@ export async function readArchiveFile(
   if (!response.ok) {
     if (response.status === 404) {
       throw new Error(
-        `ERROR ${response.status} - no such file or this token can't see the repo`,
+        `GitHub answered 404 for ${url}: no file there, or the token can't see the repo`,
       );
     }
-    throw new Error(`ERROR ${response.status}`);
+    throw new Error(`GitHub answered ${response.status}`);
   }
 
   // json() is typed any; unknown makes every field below prove itself first.
   const body: unknown = await response.json();
 
   if (body === null || typeof body !== "object") {
-    throw new Error("the responce body must be an object");
+    throw new Error("GitHub's answer isn't an object");
   }
-  if (!("type" in body)) {
-    throw new Error("the responce body type must have a type");
+  if (!("type" in body) || body.type !== "file") {
+    throw new Error("GitHub's answer isn't a file");
   }
-  if (body.type !== "file") {
-    throw new Error("the responce body type must be a file");
+  if (!("encoding" in body) || body.encoding !== "base64") {
+    throw new Error("GitHub's answer isn't base64");
   }
-  if (!("encoding" in body)) {
-    throw new Error("the responce body type must have encoding");
+  if (!("content" in body) || typeof body.content !== "string") {
+    throw new Error("GitHub's content isn't a string");
   }
-  if (body.encoding !== "base64") {
-    throw new Error("the responce body encoding must be base64");
-  }
-  if (!("content" in body)) {
-    throw new Error("the responce body type must have content");
-  }
-  if (typeof body.content !== "string") {
-    throw new Error("the responce body content must be a string");
-  }
-  if (!("sha" in body)) {
-    throw new Error("the responce body type must have sha");
-  }
-  if (typeof body.sha !== "string") {
-    throw new Error("the responce body sha must be a string");
+  if (!("sha" in body) || typeof body.sha !== "string") {
+    throw new Error("GitHub's sha isn't a string");
   }
 
   return { content: body.content, sha: body.sha };
