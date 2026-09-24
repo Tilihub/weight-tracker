@@ -146,6 +146,8 @@ export async function readArchiveFile(
   // fetch resolves on error statuses too; only a missing answer rejects.
   // Checked before the body, which on an error is GitHub's JSON, not the file.
   if (!response.ok) {
+    // GitHub answers 404, not 403, when a token can't see a private repo, so
+    // a missing file, a token problem and a wrong URL all look the same.
     if (response.status === 404) {
       throw new Error(
         `GitHub answered 404 for ${url}: no file there, or the token can't see the repo`,
