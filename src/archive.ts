@@ -1,9 +1,12 @@
-// Turns the archive file's text into something the rest of the app can trust.
-// JSON.parse returns any, so every field is established by hand here.
-// Types only: whether a date is a real calendar date and whether a weight is
-// plausible stay with db.ts's validators, which still run on what this makes.
-// Throws on anything it can't establish — a partial archive read is worse than
-// a failed one, because it looks like it worked.
+// The archive: the canonical copy of the history, one JSON file in a private
+// GitHub repo. This file owns its format and its trip to and from GitHub.
+
+// Where the archive lives. A private repo, deliberately separate from this
+// public one: a leaked token can then reach the history, but not the code the
+// phone runs.
+const USERNAME = "Tilihub";
+const REPO = "weight-archive";
+const ARCHIVE_PATH = "archive.json";
 
 import type { WeightRecord } from "./db";
 
@@ -100,4 +103,77 @@ export function parseArchive(text: string): Archive {
   }
 
   return { records, goals: parsed.goals };
+}
+
+export function serializeArchive(archive: Archive): string {
+  return `${JSON.stringify(archive, null, 2)}\n`;
+}
+
+// Resolves with the file's content, still base64 as GitHub sends it, and its
+// sha: the version a write must name to replace it, so the two travel
+// together. Rejects on any non-2xx answer, on an answer that isn't a file,
+// and when there's no connection (fetch's own rejection, passed through).
+// The token is a parameter so it never sits in the source, which ships to
+// every visitor.
+export async function readArchiveFile(
+  token: string,
+): Promise<{ content: string; sha: string }> {
+  const url = `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${ARCHIVE_PATH}`;
+
+  const response = await fetch(url, {
+    headers: {
+      Authorization: `Bearer ${token}`,
+      Accept: "application/vnd.github+json",
+      // Pinned, so GitHub's changes can't alter the answer. A retired version
+      // answers 410; each lasts at least 24 months after its successor ships.
+      "X-GitHub-Api-Version": "2026-03-10",
+    },
+    // GitHub marks these answers reusable for 60 seconds. Without no-store, a
+    // read soon after a write can come from the browser's copy, old sha and all.
+    cache: "no-store",
+  });
+
+  // fetch resolves on error statuses too; only a missing answer rejects.
+  // Checked before the body, which on an error is GitHub's JSON, not the file.
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(
+        `ERROR ${response.status} - no such file or this token can't see the repo`,
+      );
+    }
+    throw new Error(`ERROR ${response.status}`);
+  }
+
+  // json() is typed any; unknown makes every field below prove itself first.
+  const body: unknown = await response.json();
+
+  if (body === null || typeof body !== "object") {
+    throw new Error("the responce body must be an object");
+  }
+  if (!("type" in body)) {
+    throw new Error("the responce body type must have a type");
+  }
+  if (body.type !== "file") {
+    throw new Error("the responce body type must be a file");
+  }
+  if (!("encoding" in body)) {
+    throw new Error("the responce body type must have encoding");
+  }
+  if (body.encoding !== "base64") {
+    throw new Error("the responce body encoding must be base64");
+  }
+  if (!("content" in body)) {
+    throw new Error("the responce body type must have content");
+  }
+  if (typeof body.content !== "string") {
+    throw new Error("the responce body content must be a string");
+  }
+  if (!("sha" in body)) {
+    throw new Error("the responce body type must have sha");
+  }
+  if (typeof body.sha !== "string") {
+    throw new Error("the responce body sha must be a string");
+  }
+
+  return { content: body.content, sha: body.sha };
 }
