@@ -119,15 +119,15 @@ export function serializeArchive(archive: Archive): string {
   return `${JSON.stringify(archive, null, 2)}\n`;
 }
 
-// Resolves with the file's content, still base64 as GitHub sends it, and its
-// sha: the version a write must name to replace it, so the two travel
-// together. Rejects on any non-2xx answer, on an answer that isn't a file,
-// and when there's no connection (fetch's own rejection, passed through).
-// The token is a parameter so it never sits in the source, which ships to
-// every visitor.
+// Resolves with the file's text, decoded from GitHub's base64, and its sha:
+// the version a write must name to replace it, so the two travel together.
+// Rejects on any non-2xx answer, on an answer that isn't a file, on content
+// that doesn't decode, and when there's no connection (fetch's own rejection,
+// passed through). The token is a parameter so it never sits in the source,
+// which ships to every visitor.
 export async function readArchiveFile(
   token: string,
-): Promise<{ content: string; sha: string }> {
+): Promise<{ text: string; sha: string }> {
   const url = `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${ARCHIVE_PATH}`;
 
   const response = await fetch(url, {
@@ -175,5 +175,24 @@ export async function readArchiveFile(
     throw new Error("GitHub's sha isn't a string");
   }
 
-  return { content: body.content, sha: body.sha };
+  let text = "";
+  try {
+    text = base64ToText(body.content);
+  } catch (error) {
+    const detail = error instanceof Error ? error.message : String(error);
+    throw new Error(`GitHub's content doesn't decode: ${detail}`);
+  }
+
+  return { text, sha: body.sha };
+}
+
+// Base64 to bytes, then bytes to text as UTF-8. Not atob: it returns the bytes
+// disguised as characters, which is only the right text while everything is
+// ASCII, and goals will hold whatever gets typed. fatal makes invalid UTF-8
+// throw rather than turn into "�", which the next sync would write back.
+function base64ToText(base64: string): string {
+  const bytes = Uint8Array.fromBase64(base64);
+  const decoder = new TextDecoder("utf-8", { fatal: true });
+
+  return decoder.decode(bytes);
 }
