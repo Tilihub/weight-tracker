@@ -26,8 +26,9 @@ export class ArchiveChangedError extends Error {
 
 // Turns the archive file's text into something the rest of the app can trust.
 // JSON.parse returns any, so every field is established by hand here.
-// Types only: whether a date is a real calendar date and whether a weight is
-// plausible stay with db.ts's validators, which still run on what this makes.
+// Types only: whether a date is a real calendar date, whether a weight is
+// plausible and whether a date repeats stay with db.ts's validators, which
+// still run on what this makes.
 // Throws on anything it can't establish — a partial archive read is worse than
 // a failed one, because it looks like it worked.
 export function parseArchive(text: string): Archive {
@@ -63,7 +64,6 @@ export function parseArchive(text: string): Archive {
   const rawRecords: unknown[] = parsed.records;
 
   const records: WeightRecord[] = [];
-  const dates = new Set<string>();
 
   // One stamp for the whole file: every record missing modified came from the
   // same hand edit, so separate times would imply an order that isn't real.
@@ -101,14 +101,6 @@ export function parseArchive(text: string): Archive {
       }
       modified = entry.modified;
     }
-
-    // Caught here rather than left to putWeights: mergeRecords runs first, and
-    // a duplicate remote date makes it compare remote against remote, so the
-    // merge would already be wrong by the time the store rejected anything.
-    if (dates.has(date)) {
-      throw new Error(`records[${i}] repeats the date ${date}`);
-    }
-    dates.add(date);
 
     // A new object rather than the parsed one: nothing handed in is mutated,
     // and the array's type is established instead of asserted.
