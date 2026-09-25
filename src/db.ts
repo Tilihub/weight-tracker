@@ -3,6 +3,8 @@
 // Every exported function returns a promise, including on bad input: bad
 // input rejects, it never throws.
 
+import { mergeRecords } from "./merge";
+
 // --- types ---
 // A weigh-in as stored. `date` is the measurement day. `modified` is when
 // this row was last written — not when it was measured. It exists for the
@@ -57,6 +59,26 @@ function validateRecord(record: unknown) {
   return validateDate(record.date) ?? validateWeight(record.weight);
 }
 
+function validateRecords(records: WeightRecord[]) {
+  if (!Array.isArray(records)) {
+    return "records must be an array";
+  }
+  const dates = new Set<string>();
+  for (const [i, record] of records.entries()) {
+    const recordError = validateRecord(record);
+    if (recordError) {
+      return `records[${i}] raised an error because ${recordError}`;
+    }
+    // Two records for one date: the merge would keep one and silently drop the other.
+    if (dates.has(record.date)) {
+      return `duplicate ${record.date}`;
+    }
+    dates.add(record.date);
+  }
+
+  return null;
+}
+
 // --- connection ---
 // TypeScript can't check object store names, so every use goes through this
 // constant. Keep the value as it is: existing data is stored under that name.
@@ -88,9 +110,8 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
 // Resolves with the stored record. Rejects on a bad date or weight, or if the
 // write fails.
 // modified is stamped here, not passed in, so the UI path can't forget it.
-// The bulk path is deliberately the opposite: putWeights writes modified
-// exactly as given, because a merge that restamped it would destroy the
-// only field it has to compare.
+// mergeWeights is deliberately the opposite: it writes modified exactly as
+// given, because restamping would destroy the only field the merge compares.
 export function addWeight(date: string, weight: number): Promise<WeightRecord> {
   const record: WeightRecord = {
     date,
@@ -160,46 +181,34 @@ export function getAllWeights(): Promise<WeightRecord[]> {
   });
 }
 
-// Bulk insert-or-replace, keyed by date. Takes whole records: used for merge
-// results, and for the one-off history import, which stamps modified itself.
-// Resolves with the number of records written. Rejects if the input isn't an
-// array, if two records share a date, if any record fails validation, or if
-// the write fails — and in every case nothing is written at all.
-// Unknown fields are not rejected; they are stored as they arrive.
-export function putWeights(records: WeightRecord[]): Promise<number> {
-  if (!Array.isArray(records)) {
-    return Promise.reject(new Error("records must be an array"));
+// Merges the archive's records into the store and resolves with the merged
+// set, which is what the sync pushes back. Rejects on a bad or duplicate
+// record before anything is written, or if the transaction fails.
+// Read, merge and write share one transaction. With separate ones, a save
+// landing in between would be overwritten by the copy read before it, and
+// lost from both sides.
+export function mergeWeights(records: WeightRecord[]): Promise<WeightRecord[]> {
+  const recordsError = validateRecords(records);
+  if (recordsError) {
+    return Promise.reject(new Error(recordsError));
   }
-  // Validate everything before opening the transaction, so a bad record
-  // means the database is never touched at all.
-  const dates = new Set<string>();
-  for (const [i, record] of records.entries()) {
-    const recordError = validateRecord(record);
-    if (recordError) {
-      return Promise.reject(
-        new Error(`records[${i}] raised an error because ${recordError}`),
-      );
-    }
-    // Two records for one date would collapse into a single put, silently
-    // dropping one and making the resolved count a lie.
-    if (dates.has(record.date)) {
-      return Promise.reject(new Error(`duplicate ${record.date}`));
-    }
-    dates.add(record.date);
-  }
-
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
+      let merged: WeightRecord[] = [];
       const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
       const store = tx.objectStore(WEIGH_INS_STORE);
-      // All puts must be queued in one synchronous pass. The transaction
-      // auto-commits as soon as this code yields with nothing left queued,
-      // so any await or .then() in here would close it underneath us.
-      for (const record of records) {
-        store.put(record);
-      }
+      const req = store.getAll();
+      req.onsuccess = () => {
+        // Keep this synchronous: the transaction commits as soon as the
+        // handler returns with nothing queued, so an await would close it
+        // before the puts.
+        merged = mergeRecords(req.result, records);
+        for (const record of merged) {
+          store.put(record);
+        }
+      };
       tx.oncomplete = () => {
-        resolve(records.length);
+        resolve(merged);
       };
       tx.onabort = () => {
         reject(tx.error ?? new Error("the transaction was aborted"));
