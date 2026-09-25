@@ -198,7 +198,7 @@ export async function writeArchiveFile(
 
   const response = await fetch(ARCHIVE_URL, {
     method: "PUT",
-    body: JSON.stringify({ message: "placeholder", content, sha }),
+    body: JSON.stringify({ message: "Sync", content, sha }),
     headers: { ...githubHeaders(token), "Content-Type": "application/json" },
   });
 
