@@ -76,7 +76,7 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
     req.result.createObjectStore(WEIGH_INS_STORE, { keyPath: "date" });
   };
   req.onerror = () => {
-    reject(req.error ?? new Error("the request returned an error"));
+    reject(req.error ?? new Error("could not open the database"));
   };
 });
 
@@ -112,7 +112,7 @@ export function addWeight(date: string, weight: number): Promise<WeightRecord> {
         resolve(record);
       };
       tx.onabort = () => {
-        reject(tx.error ?? new Error("could not open the database"));
+        reject(tx.error ?? new Error("the transaction was aborted"));
       };
     });
   });
@@ -154,7 +154,7 @@ export function getAllWeights(): Promise<WeightRecord[]> {
         resolve(req.result);
       };
       tx.onabort = () => {
-        reject(tx.error ?? new Error("could not open the database"));
+        reject(tx.error ?? new Error("the transaction was aborted"));
       };
     });
   });
