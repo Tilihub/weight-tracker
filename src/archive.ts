@@ -9,6 +9,7 @@ import type { WeightRecord } from "./db";
 const USERNAME = "Tilihub";
 const REPO = "weight-archive";
 const ARCHIVE_PATH = "archive.json";
+const ARCHIVE_URL = `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${ARCHIVE_PATH}`;
 
 // goals is unknown until the goals model exists. unknown rather than any, so
 // the first code to use it is forced to narrow instead of assuming.
@@ -16,6 +17,12 @@ export type Archive = {
   records: WeightRecord[];
   goals: unknown;
 };
+
+// A 409: the archive changed after the write's sha was read. Its own class so
+// the sync can recognise it and retry; other failures are only reported.
+export class ArchiveChangedError extends Error {
+  name = "ArchiveChangedError";
+}
 
 // Turns the archive file's text into something the rest of the app can trust.
 // JSON.parse returns any, so every field is established by hand here.
@@ -128,16 +135,8 @@ export function serializeArchive(archive: Archive): string {
 export async function readArchiveFile(
   token: string,
 ): Promise<{ text: string; sha: string }> {
-  const url = `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${ARCHIVE_PATH}`;
-
-  const response = await fetch(url, {
-    headers: {
-      Authorization: `Bearer ${token}`,
-      Accept: "application/vnd.github+json",
-      // Pinned, so GitHub's changes can't alter the answer. A retired version
-      // answers 410; each lasts at least 24 months after its successor ships.
-      "X-GitHub-Api-Version": "2026-03-10",
-    },
+  const response = await fetch(ARCHIVE_URL, {
+    headers: githubHeaders(token),
     // GitHub marks these answers reusable for 60 seconds. Without no-store, a
     // read soon after a write can come from the browser's copy, old sha and all.
     cache: "no-store",
@@ -150,7 +149,7 @@ export async function readArchiveFile(
     // a missing file, a token problem and a wrong URL all look the same.
     if (response.status === 404) {
       throw new Error(
-        `GitHub answered 404 for ${url}: no file there, or the token can't see the repo`,
+        `GitHub answered 404 for ${ARCHIVE_URL}: no file there, or the token can't see the repo`,
       );
     }
     throw new Error(`GitHub answered ${response.status}`);
@@ -186,6 +185,48 @@ export async function readArchiveFile(
   return { text, sha: body.sha };
 }
 
+// Replaces the archive with text, only if it's still at sha: the version the
+// text was based on. Rejects with ArchiveChangedError on 409, an Error on any
+// other non-2xx answer, and fetch's own error when no answer arrives. With no
+// answer, the write may still have happened; only the next read can tell.
+export async function writeArchiveFile(
+  token: string,
+  text: string,
+  sha: string,
+): Promise<void> {
+  const content = textToBase64(text);
+
+  const response = await fetch(ARCHIVE_URL, {
+    method: "PUT",
+    body: JSON.stringify({ message: "placeholder", content, sha }),
+    headers: { ...githubHeaders(token), "Content-Type": "application/json" },
+  });
+
+  if (!response.ok) {
+    if (response.status === 404) {
+      throw new Error(
+        `GitHub answered 404 for ${ARCHIVE_URL}: no file there, or the token can't see the repo`,
+      );
+    }
+    if (response.status === 409) {
+      throw new ArchiveChangedError(
+        "GitHub answered 409: the archive changed since it was read",
+      );
+    }
+    throw new Error(`GitHub answered ${response.status}`);
+  }
+}
+
+function githubHeaders(token: string): Record<string, string> {
+  return {
+    Authorization: `Bearer ${token}`,
+    Accept: "application/vnd.github+json",
+    // Pinned, so GitHub's changes can't alter the answer. A retired version
+    // answers 410; each lasts at least 24 months after its successor ships.
+    "X-GitHub-Api-Version": "2026-03-10",
+  };
+}
+
 // Base64 to bytes, then bytes to text as UTF-8. Not atob: it returns the bytes
 // disguised as characters, which is only the right text while everything is
 // ASCII, and goals will hold whatever gets typed. fatal makes invalid UTF-8
@@ -195,4 +236,13 @@ function base64ToText(base64: string): string {
   const decoder = new TextDecoder("utf-8", { fatal: true });
 
   return decoder.decode(bytes);
+}
+
+// The reverse of base64ToText, and not btoa, which only handles Latin-1. Text
+// from JSON.stringify always encodes exactly, so there's nothing to catch.
+function textToBase64(text: string): string {
+  const encoder = new TextEncoder();
+  const bytes = encoder.encode(text);
+
+  return bytes.toBase64();
 }
