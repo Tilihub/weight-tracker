@@ -9,11 +9,24 @@ import { mergeRecords } from "./merge";
 // A weigh-in as stored. `date` is the measurement day. `modified` is when
 // this row was last written — not when it was measured. It exists for the
 // two-device merge, which compares it to decide which copy of a date wins.
-export type WeightRecord = {
+export type WeighIn = {
   date: string;
   weight: number;
   modified: number;
 };
+
+// A deleted day. It replaces the row instead of removing it, so the deletion
+// reaches the archive and the other device: its newer `modified` wins the
+// merge like any edit. No weight, so nothing can show or plot one by mistake.
+export type Tombstone = {
+  date: string;
+  deleted: true;
+  modified: number;
+};
+
+// Anything the store holds. The sync works with both kinds; the readers the
+// screen uses return weigh-ins only.
+export type WeightRecord = WeighIn | Tombstone;
 
 // --- validation ---
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
@@ -112,8 +125,8 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
 // modified is stamped here, not passed in, so the UI path can't forget it.
 // mergeWeights is deliberately the opposite: it writes modified exactly as
 // given, because restamping would destroy the only field the merge compares.
-export function addWeight(date: string, weight: number): Promise<WeightRecord> {
-  const record: WeightRecord = {
+export function addWeight(date: string, weight: number): Promise<WeighIn> {
+  const record: WeighIn = {
     date,
     weight,
     modified: Date.now(),
@@ -139,9 +152,9 @@ export function addWeight(date: string, weight: number): Promise<WeightRecord> {
   });
 }
 
-// Resolves with the stored record, or undefined if that date has none.
-// Rejects on a bad date, or if the read fails.
-export function getWeight(date: string): Promise<WeightRecord | undefined> {
+// Resolves with that date's weigh-in, or undefined if it has none or it was
+// deleted. Rejects on a bad date, or if the read fails.
+export function getWeight(date: string): Promise<WeighIn | undefined> {
   const dateError = validateDate(date);
   if (dateError) {
     return Promise.reject(new Error(dateError));
@@ -153,7 +166,12 @@ export function getWeight(date: string): Promise<WeightRecord | undefined> {
       // Reads resolve on the request, not the transaction — req.result is the
       // only place the data appears. A miss is not an error: result is undefined.
       req.onsuccess = () => {
-        resolve(req.result);
+        const record: WeightRecord | undefined = req.result;
+        if (record === undefined || "deleted" in record) {
+          resolve(undefined);
+          return;
+        }
+        resolve(record);
       };
       tx.onabort = () => {
         reject(tx.error ?? new Error("the transaction was aborted"));
@@ -162,17 +180,21 @@ export function getWeight(date: string): Promise<WeightRecord | undefined> {
   });
 }
 
-// Resolves with an array of every record, empty if the store is empty.
+// Resolves with every weigh-in, empty if there are none. Tombstones are left
+// out, as in getWeight.
 // Records come back in key order, which is chronological because the keys
 // are ISO date strings. No sorting needed downstream.
 // Rejects if the read fails.
-export function getAllWeights(): Promise<WeightRecord[]> {
+export function getAllWeights(): Promise<WeighIn[]> {
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
       const tx = db.transaction(WEIGH_INS_STORE, "readonly");
       const req = tx.objectStore(WEIGH_INS_STORE).getAll();
       req.onsuccess = () => {
-        resolve(req.result);
+        const records: WeightRecord[] = req.result;
+        // Tests for weight rather than for a missing deleted: TypeScript only
+        // narrows filter's result from a positive test.
+        resolve(records.filter((r) => "weight" in r));
       };
       tx.onabort = () => {
         reject(tx.error ?? new Error("the transaction was aborted"));

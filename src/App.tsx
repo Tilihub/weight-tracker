@@ -1,5 +1,5 @@
 import { useState, useEffect } from "react";
-import { addWeight, getAllWeights, getWeight, type WeightRecord } from "./db";
+import { addWeight, getAllWeights, getWeight, type WeighIn } from "./db";
 
 // Today as YYYY-MM-DD from local date parts; toISOString() would give the UTC
 // day, which is the wrong one for part of every evening. Called at the moment
@@ -21,7 +21,7 @@ function errorToString(error: unknown) {
 function App() {
   const [weightText, setWeightText] = useState("");
   const [todayWeight, setTodayWeight] = useState<number | null>(null);
-  const [records, setRecords] = useState<WeightRecord[]>([]);
+  const [records, setRecords] = useState<WeighIn[]>([]);
 
   // message is the outcome of an action; todayWeight is a fact about what's
   // stored. Kept apart so a failed save doesn't wipe the number off the screen.
