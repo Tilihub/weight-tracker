@@ -33,7 +33,7 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Validators return null when valid, or a message string when not.
 // They never throw and never reject — the caller decides how to report.
-function validateWeight(weight: unknown) {
+function validateWeight(weight: unknown): string | null {
   if (typeof weight !== "number" || !Number.isFinite(weight)) {
     return "weight must be a finite number";
   }
@@ -43,7 +43,7 @@ function validateWeight(weight: unknown) {
   return null;
 }
 
-function validateDate(date: unknown) {
+function validateDate(date: unknown): string | null {
   if (typeof date !== "string" || !ISO_DATE.test(date)) {
     return "date must be YYYY-MM-DD";
   }
@@ -59,20 +59,39 @@ function validateDate(date: unknown) {
 
 // `modified` is checked here because bulk writes take it from the caller,
 // and that caller's data can come from a file someone edited by hand.
-function validateRecord(record: unknown) {
-  if (!record || typeof record !== "object") {
+function validateRecord(record: unknown): string | null {
+  if (record === null || typeof record !== "object") {
     return "record must be an object";
   }
-  if (!("date" in record && "weight" in record && "modified" in record)) {
-    return "record must have a date, a weight and a modified time stamp";
+  if (!("date" in record && "modified" in record)) {
+    return "date and modified must be present";
+  }
+  const dateError = validateDate(record.date);
+  if (dateError) {
+    return dateError;
   }
   if (!Number.isFinite(record.modified)) {
-    return "modified time stamp has wrong format";
+    return "modified must be a finite number";
   }
-  return validateDate(record.date) ?? validateWeight(record.weight);
+  // Exactly one of weight and deleted. getWeight tells the kinds apart by
+  // deleted, getAllWeights by weight, and a record with both or neither
+  // would show in one but not the other.
+  if ("weight" in record && "deleted" in record) {
+    return "weight and deleted can't both be present";
+  }
+  if ("weight" in record) {
+    return validateWeight(record.weight);
+  }
+  if (!("deleted" in record)) {
+    return "weight or deleted must be present";
+  }
+  if (record.deleted !== true) {
+    return "deleted must be true";
+  }
+  return null;
 }
 
-function validateRecords(records: WeightRecord[]) {
+function validateRecords(records: WeightRecord[]): string | null {
   if (!Array.isArray(records)) {
     return "records must be an array";
   }
