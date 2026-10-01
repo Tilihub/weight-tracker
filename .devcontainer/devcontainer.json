@@ -1,3 +1,15 @@
-{ "name": "weight-tracker",
- "image": "mcr.microsoft.com/devcontainers/javascript-node:24", 
- "postCreateCommand": "npm install --if-present" } 
+{
+  "name": "weight-tracker",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:24",
+  "postCreateCommand": "npm install",
+  "customizations": {
+    "vscode": {
+      "extensions": ["esbenp.prettier-vscode"],
+      "settings": {
+        "editor.formatOnSave": true,
+        "editor.defaultFormatter": "esbenp.prettier-vscode",
+        "editor.formatOnPaste": true
+      }
+    }
+  }
+}
