@@ -171,6 +171,41 @@ export function addWeight(date: string, weight: number): Promise<WeighIn> {
   });
 }
 
+// Replaces that date's weigh-in with a tombstone. Resolves with nothing,
+// whether or not there was a weigh-in to delete. Rejects on a bad date, or if
+// the transaction fails.
+// The read and the write share one transaction, so the row can't change in
+// between.
+export function deleteWeight(date: string): Promise<void> {
+  const tombstone: Tombstone = { date, deleted: true, modified: Date.now() };
+  const validationError = validateRecord(tombstone);
+  if (validationError) {
+    return Promise.reject(new Error(validationError));
+  }
+  return dbReady.then((db) => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
+      const store = tx.objectStore(WEIGH_INS_STORE);
+      const req = store.get(date);
+      req.onsuccess = () => {
+        const record: WeightRecord | undefined = req.result;
+        // Only a weigh-in is replaced. A tombstone on an empty or already
+        // deleted day could be newer than a weigh-in the other device hasn't
+        // synced yet, and would delete it in the merge.
+        if (record !== undefined && "weight" in record) {
+          store.put(tombstone);
+        }
+      };
+      tx.oncomplete = () => {
+        resolve();
+      };
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("the transaction was aborted"));
+      };
+    });
+  });
+}
+
 // Resolves with that date's weigh-in, or undefined if it has none or it was
 // deleted. Rejects on a bad date, or if the read fails.
 export function getWeight(date: string): Promise<WeighIn | undefined> {
