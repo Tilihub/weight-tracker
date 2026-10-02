@@ -28,6 +28,12 @@ export type Tombstone = {
 // screen uses return weigh-ins only.
 export type WeightRecord = WeighIn | Tombstone;
 
+// The one place that tells the two kinds apart. Takes undefined too, which is
+// what a read gives for an empty day, so callers don't test for it themselves.
+function isWeighIn(record: WeightRecord | undefined): record is WeighIn {
+  return record !== undefined && "weight" in record;
+}
+
 // --- validation ---
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -73,9 +79,8 @@ function validateRecord(record: unknown): string | null {
   if (!Number.isFinite(record.modified)) {
     return "modified must be a finite number";
   }
-  // Exactly one of weight and deleted. getWeight tells the kinds apart by
-  // deleted, getAllWeights by weight, and a record with both or neither
-  // would show in one but not the other.
+  // Exactly one of weight and deleted, as the two types require. isWeighIn
+  // looks only for weight, so a deleted record that kept one would still show.
   if ("weight" in record && "deleted" in record) {
     return "weight and deleted can't both be present";
   }
@@ -192,7 +197,7 @@ export function deleteWeight(date: string): Promise<void> {
         // Only a weigh-in is replaced. A tombstone on an empty or already
         // deleted day could be newer than a weigh-in the other device hasn't
         // synced yet, and would delete it in the merge.
-        if (record !== undefined && "weight" in record) {
+        if (isWeighIn(record)) {
           store.put(tombstone);
         }
       };
@@ -221,7 +226,7 @@ export function getWeight(date: string): Promise<WeighIn | undefined> {
       // only place the data appears. A miss is not an error: result is undefined.
       req.onsuccess = () => {
         const record: WeightRecord | undefined = req.result;
-        if (record === undefined || "deleted" in record) {
+        if (!isWeighIn(record)) {
           resolve(undefined);
           return;
         }
@@ -248,7 +253,7 @@ export function getAllWeights(): Promise<WeighIn[]> {
         const records: WeightRecord[] = req.result;
         // Tests for weight rather than for a missing deleted: TypeScript only
         // narrows filter's result from a positive test.
-        resolve(records.filter((r) => "weight" in r));
+        resolve(records.filter(isWeighIn));
       };
       tx.onabort = () => {
         reject(tx.error ?? new Error("the transaction was aborted"));
