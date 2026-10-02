@@ -251,8 +251,6 @@ export function getAllWeights(): Promise<WeighIn[]> {
       const req = tx.objectStore(WEIGH_INS_STORE).getAll();
       req.onsuccess = () => {
         const records: WeightRecord[] = req.result;
-        // Tests for weight rather than for a missing deleted: TypeScript only
-        // narrows filter's result from a positive test.
         resolve(records.filter(isWeighIn));
       };
       tx.onabort = () => {
