@@ -17,10 +17,11 @@ export type WeighIn = {
 
 // A deleted day. It replaces the row instead of removing it, so the deletion
 // reaches the archive and the other device: its newer `modified` wins the
-// merge like any edit. No weight, so nothing can show or plot one by mistake.
+// merge like any edit. The weight is null rather than missing, so every row
+// has the same three keys.
 export type Tombstone = {
   date: string;
-  deleted: true;
+  weight: null;
   modified: number;
 };
 
@@ -31,7 +32,7 @@ export type WeightRecord = WeighIn | Tombstone;
 // The one place that tells the two kinds apart. Takes undefined too, which is
 // what a read gives for an empty day, so callers don't test for it themselves.
 function isWeighIn(record: WeightRecord | undefined): record is WeighIn {
-  return record !== undefined && "weight" in record;
+  return record !== undefined && record.weight !== null;
 }
 
 // --- validation ---
@@ -69,8 +70,8 @@ function validateRecord(record: unknown): string | null {
   if (record === null || typeof record !== "object") {
     return "record must be an object";
   }
-  if (!("date" in record && "modified" in record)) {
-    return "date and modified must be present";
+  if (!("date" in record && "weight" in record && "modified" in record)) {
+    return "date, weight and modified must be present";
   }
   const dateError = validateDate(record.date);
   if (dateError) {
@@ -79,20 +80,15 @@ function validateRecord(record: unknown): string | null {
   if (!Number.isFinite(record.modified)) {
     return "modified must be a finite number";
   }
-  // Exactly one of weight and deleted, as the two types require. isWeighIn
-  // looks only for weight, so a deleted record that kept one would still show.
-  if ("weight" in record && "deleted" in record) {
-    return "weight and deleted can't both be present";
+  // A null weight is a tombstone: there is no weight to check.
+  if (record.weight === null) {
+    return null;
   }
-  if ("weight" in record) {
-    return validateWeight(record.weight);
+  const weightError = validateWeight(record.weight);
+  if (weightError) {
+    return weightError;
   }
-  if (!("deleted" in record)) {
-    return "weight or deleted must be present";
-  }
-  if (record.deleted !== true) {
-    return "deleted must be true";
-  }
+
   return null;
 }
 
@@ -155,9 +151,13 @@ export function addWeight(date: string, weight: number): Promise<WeighIn> {
     weight,
     modified: Date.now(),
   };
-  const validationError = validateRecord(record);
-  if (validationError) {
-    return Promise.reject(new Error(validationError));
+  // Not validateRecord: it accepts a null weight, and here that would save a
+  // tombstone through the save function.
+  const dateError = validateDate(date);
+  const weightError = validateWeight(record.weight);
+  const error = dateError ?? weightError;
+  if (error) {
+    return Promise.reject(new Error(error));
   }
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {
@@ -182,10 +182,10 @@ export function addWeight(date: string, weight: number): Promise<WeighIn> {
 // The read and the write share one transaction, so the row can't change in
 // between.
 export function deleteWeight(date: string): Promise<void> {
-  const tombstone: Tombstone = { date, deleted: true, modified: Date.now() };
-  const validationError = validateRecord(tombstone);
-  if (validationError) {
-    return Promise.reject(new Error(validationError));
+  const tombstone: Tombstone = { date, weight: null, modified: Date.now() };
+  const dateError = validateDate(date);
+  if (dateError) {
+    return Promise.reject(new Error(dateError));
   }
   return dbReady.then((db) => {
     return new Promise((resolve, reject) => {

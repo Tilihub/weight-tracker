@@ -20,6 +20,8 @@ export function mergeRecords(
   // to remote. That tie is deliberate: equal modified means the archive's
   // copy came from this exact local write, so a difference can only be a hand
   // edit of the archive. Strictly `>`, never `>=`, or hand edits are lost.
+  // A deleted day needs no rule of its own: it's a row with a null weight, so
+  // it wins or loses on modified like any other.
   for (const remoteRecord of remote) {
     const date = remoteRecord.date;
     const localRecord = merged.get(date);
@@ -35,7 +37,5 @@ export function mergeRecords(
     a.date < b.date ? -1 : a.date > b.date ? 1 : 0,
   );
 
-  // Known gap: a row on one side and not the other is always taken, so a
-  // deletion can't survive a merge. Needs a deleted flag on the record.
   return records;
 }

@@ -86,8 +86,9 @@ export function parseArchive(text: string): Archive {
       throw new Error(`records[${i}] has no weight`);
     }
     const weight = entry.weight;
-    if (typeof weight !== "number") {
-      throw new Error(`records[${i}] weight must be a number`);
+    // null is a deleted day.
+    if (typeof weight !== "number" && weight !== null) {
+      throw new Error(`records[${i}] weight must be a number or null`);
     }
 
     // Three outcomes, not two. Absent means a row added by hand and is
