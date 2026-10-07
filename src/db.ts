@@ -136,9 +136,33 @@ const dbReady = new Promise<IDBDatabase>((resolve, reject) => {
 });
 
 // --- operations ---
+
+// Runs `work` in one transaction on the weigh-ins store. Every operation goes
+// through here, so none of them settles a promise itself.
+// Resolves with nothing, once the transaction commits: a successful request
+// only means the work was queued. An operation with a result adds it in its
+// own .then.
 // Failures reject from the transaction's abort event, not its error event:
 // tx.error is only set once the transaction has aborted, and error fires
 // before that. The fallback covers a manual abort(), where tx.error stays null.
+function runTransaction(
+  mode: "readonly" | "readwrite",
+  work: (store: IDBObjectStore) => void,
+): Promise<void> {
+  return dbReady.then((db) => {
+    return new Promise((resolve, reject) => {
+      const tx = db.transaction(WEIGH_INS_STORE, mode);
+      const store = tx.objectStore(WEIGH_INS_STORE);
+      work(store);
+      tx.oncomplete = () => {
+        resolve();
+      };
+      tx.onabort = () => {
+        reject(tx.error ?? new Error("the transaction was aborted"));
+      };
+    });
+  });
+}
 
 // Resolves with the stored record. Rejects on a bad date or weight, or if the
 // write fails.
@@ -159,21 +183,9 @@ export function addWeight(date: string, weight: number): Promise<WeighIn> {
   if (error) {
     return Promise.reject(new Error(error));
   }
-  return dbReady.then((db) => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
-      tx.objectStore(WEIGH_INS_STORE).put(record);
-      // Resolve on the transaction, not the put request. A successful request
-      // only means the write was queued — nothing is durable until the
-      // transaction commits.
-      tx.oncomplete = () => {
-        resolve(record);
-      };
-      tx.onabort = () => {
-        reject(tx.error ?? new Error("the transaction was aborted"));
-      };
-    });
-  });
+  return runTransaction("readwrite", (store) => {
+    store.put(record);
+  }).then(() => record);
 }
 
 // Replaces that date's weigh-in with a tombstone. Resolves with nothing,
@@ -187,27 +199,17 @@ export function deleteWeight(date: string): Promise<void> {
   if (dateError) {
     return Promise.reject(new Error(dateError));
   }
-  return dbReady.then((db) => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
-      const store = tx.objectStore(WEIGH_INS_STORE);
-      const req = store.get(date);
-      req.onsuccess = () => {
-        const record: WeightRecord | undefined = req.result;
-        // Only a weigh-in is replaced. A tombstone on an empty or already
-        // deleted day could be newer than a weigh-in the other device hasn't
-        // synced yet, and would delete it in the merge.
-        if (isWeighIn(record)) {
-          store.put(tombstone);
-        }
-      };
-      tx.oncomplete = () => {
-        resolve();
-      };
-      tx.onabort = () => {
-        reject(tx.error ?? new Error("the transaction was aborted"));
-      };
-    });
+  return runTransaction("readwrite", (store) => {
+    const req = store.get(date);
+    req.onsuccess = () => {
+      const record: WeightRecord | undefined = req.result;
+      // Only a weigh-in is replaced. A tombstone on an empty or already
+      // deleted day could be newer than a weigh-in the other device hasn't
+      // synced yet, and would delete it in the merge.
+      if (isWeighIn(record)) {
+        store.put(tombstone);
+      }
+    };
   });
 }
 
@@ -218,25 +220,16 @@ export function getWeight(date: string): Promise<WeighIn | undefined> {
   if (dateError) {
     return Promise.reject(new Error(dateError));
   }
-  return dbReady.then((db) => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(WEIGH_INS_STORE, "readonly");
-      const req = tx.objectStore(WEIGH_INS_STORE).get(date);
-      // Reads resolve on the request, not the transaction — req.result is the
-      // only place the data appears. A miss is not an error: result is undefined.
-      req.onsuccess = () => {
-        const record: WeightRecord | undefined = req.result;
-        if (!isWeighIn(record)) {
-          resolve(undefined);
-          return;
-        }
-        resolve(record);
-      };
-      tx.onabort = () => {
-        reject(tx.error ?? new Error("the transaction was aborted"));
-      };
-    });
-  });
+  let weighIn: WeighIn | undefined;
+  return runTransaction("readonly", (store) => {
+    const req = store.get(date);
+    req.onsuccess = () => {
+      const record: WeightRecord | undefined = req.result;
+      if (isWeighIn(record)) {
+        weighIn = record;
+      }
+    };
+  }).then(() => weighIn);
 }
 
 // Resolves with every weigh-in, empty if there are none. Tombstones are left
@@ -245,19 +238,13 @@ export function getWeight(date: string): Promise<WeighIn | undefined> {
 // are ISO date strings. No sorting needed downstream.
 // Rejects if the read fails.
 export function getAllWeights(): Promise<WeighIn[]> {
-  return dbReady.then((db) => {
-    return new Promise((resolve, reject) => {
-      const tx = db.transaction(WEIGH_INS_STORE, "readonly");
-      const req = tx.objectStore(WEIGH_INS_STORE).getAll();
-      req.onsuccess = () => {
-        const records: WeightRecord[] = req.result;
-        resolve(records.filter(isWeighIn));
-      };
-      tx.onabort = () => {
-        reject(tx.error ?? new Error("the transaction was aborted"));
-      };
-    });
-  });
+  let records: WeightRecord[] = [];
+  return runTransaction("readonly", (store) => {
+    const req = store.getAll();
+    req.onsuccess = () => {
+      records = req.result;
+    };
+  }).then(() => records.filter(isWeighIn));
 }
 
 // Merges the archive's records into the store and resolves with the merged
@@ -271,27 +258,17 @@ export function mergeWeights(records: WeightRecord[]): Promise<WeightRecord[]> {
   if (recordsError) {
     return Promise.reject(new Error(recordsError));
   }
-  return dbReady.then((db) => {
-    return new Promise((resolve, reject) => {
-      let merged: WeightRecord[] = [];
-      const tx = db.transaction(WEIGH_INS_STORE, "readwrite");
-      const store = tx.objectStore(WEIGH_INS_STORE);
-      const req = store.getAll();
-      req.onsuccess = () => {
-        // Keep this synchronous: the transaction commits as soon as the
-        // handler returns with nothing queued, so an await would close it
-        // before the puts.
-        merged = mergeRecords(req.result, records);
-        for (const record of merged) {
-          store.put(record);
-        }
-      };
-      tx.oncomplete = () => {
-        resolve(merged);
-      };
-      tx.onabort = () => {
-        reject(tx.error ?? new Error("the transaction was aborted"));
-      };
-    });
-  });
+  let merged: WeightRecord[] = [];
+  return runTransaction("readwrite", (store) => {
+    const req = store.getAll();
+    req.onsuccess = () => {
+      // Keep this synchronous: the transaction commits as soon as the
+      // handler returns with nothing queued, so an await would close it
+      // before the puts.
+      merged = mergeRecords(req.result, records);
+      for (const record of merged) {
+        store.put(record);
+      }
+    };
+  }).then(() => merged);
 }
