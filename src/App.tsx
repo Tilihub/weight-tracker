@@ -1,7 +1,7 @@
 import { useState, useEffect } from "react";
 import { addWeight, getAllWeights, getWeight, type WeighIn } from "./db";
-import { sync } from "./sync";
 import { errorToString } from "./errors";
+import { sync } from "./sync";
 
 // localStorage key for the GitHub token. Changing it loses the token saved on
 // every device.
@@ -103,7 +103,7 @@ function App() {
       />
       {/* The async handlers return a promise; onClick wants nothing back. void
         says the promise is ignored on purpose. */}
-      <button onClick={() => void handleSaveWeight()}>Save Weight</button>
+      <button onClick={() => void handleSaveWeight()}>Save weight</button>
       <div>{localToday()}</div>
       <div>{message}</div>
       <div>
