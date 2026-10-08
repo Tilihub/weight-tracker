@@ -2,6 +2,7 @@
 // GitHub repo. This file owns its format and its trip to and from GitHub.
 
 import type { WeightRecord } from "./db";
+import { errorToString } from "./errors";
 
 // Where the archive lives. A private repo, deliberately separate from this
 // public one: a leaked token can then reach the history, but not the code the
@@ -41,7 +42,7 @@ export function parseArchive(text: string): Archive {
   } catch (error) {
     // SyntaxError says where the text broke, which is the most useful thing
     // there is when the file has been edited by hand.
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorToString(error);
     throw new Error(`the file is not valid JSON: ${detail}`);
   }
 
@@ -171,7 +172,7 @@ export async function readArchiveFile(
   try {
     text = base64ToText(body.content);
   } catch (error) {
-    const detail = error instanceof Error ? error.message : String(error);
+    const detail = errorToString(error);
     throw new Error(`GitHub's content doesn't decode: ${detail}`);
   }
 
