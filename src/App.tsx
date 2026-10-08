@@ -28,10 +28,16 @@ function App() {
   // stored. Kept apart so a failed save doesn't wipe the number off the screen.
   const [message, setMessage] = useState("");
 
-  // Runs once, after the first render. An effect's function can't be async, so
-  // this is .then/.catch. Known gap: today's record is read only at startup, so
-  // a page left open past midnight keeps showing yesterday's.
+  // Runs once, after the first render. A sync re-reads by calling loadWeights
+  // itself instead of running this again.
   useEffect(() => {
+    loadWeights();
+  }, []);
+
+  // .then/.catch rather than await, so it returns nothing and both the effect
+  // and handleSync can simply call it. Known gap: it runs only at startup and
+  // after a sync, so a page left open past midnight keeps showing yesterday's.
+  function loadWeights() {
     getWeight(localToday())
       .then((record) => setTodayWeight(record?.weight ?? null))
       .catch((error) => setMessage(errorToString(error)));
@@ -39,7 +45,7 @@ function App() {
     getAllWeights()
       .then(setRecords)
       .catch((error) => setMessage(errorToString(error)));
-  }, []);
+  }
 
   async function handleSaveWeight() {
     const text = weightText.trim();
@@ -88,6 +94,7 @@ function App() {
       setMessage("Syncing...");
       await sync(token);
       setMessage("Synced");
+      loadWeights();
     } catch (error) {
       setMessage(errorToString(error));
     }
