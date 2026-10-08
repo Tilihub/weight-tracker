@@ -1,5 +1,11 @@
 import { useState, useEffect } from "react";
 import { addWeight, getAllWeights, getWeight, type WeighIn } from "./db";
+import { sync } from "./sync";
+import { errorToString } from "./errors";
+
+// localStorage key for the GitHub token. Changing it loses the token saved on
+// every device.
+const TOKEN_KEY = "githubToken";
 
 // Today as YYYY-MM-DD from local date parts; toISOString() would give the UTC
 // day, which is the wrong one for part of every evening. Called at the moment
@@ -12,14 +18,9 @@ function localToday() {
   return `${year}-${month}-${day}`;
 }
 
-// A rejected promise's error is typed any, which passes every check. unknown
-// forces the narrowing to happen here, once.
-function errorToString(error: unknown) {
-  return error instanceof Error ? error.message : String(error);
-}
-
 function App() {
   const [weightText, setWeightText] = useState("");
+  const [tokenText, setTokenText] = useState("");
   const [todayWeight, setTodayWeight] = useState<number | null>(null);
   const [records, setRecords] = useState<WeighIn[]>([]);
 
@@ -40,10 +41,10 @@ function App() {
       .catch((error) => setMessage(errorToString(error)));
   }, []);
 
-  async function handleSave() {
+  async function handleSaveWeight() {
     const text = weightText.trim();
     if (text === "") {
-      setMessage("enter a weight");
+      setMessage("Enter a weight");
       return;
     }
 
@@ -59,21 +60,63 @@ function App() {
     }
   }
 
+  function handleSaveToken() {
+    const token = tokenText.trim();
+    if (token === "") {
+      setMessage("Enter a token");
+      return;
+    }
+
+    try {
+      localStorage.setItem(TOKEN_KEY, token);
+      // Emptied so the token doesn't stay on screen.
+      setTokenText("");
+      setMessage("Token saved");
+    } catch (error) {
+      setMessage(errorToString(error));
+    }
+  }
+
+  async function handleSync() {
+    // getItem is inside the try: it throws if the browser blocks storage.
+    try {
+      const token = localStorage.getItem(TOKEN_KEY);
+      if (token === null) {
+        setMessage("No token saved yet");
+        return;
+      }
+      setMessage("Syncing...");
+      await sync(token);
+      setMessage("Synced");
+    } catch (error) {
+      setMessage(errorToString(error));
+    }
+  }
+
   return (
     <>
       <h1>hello again</h1>
       <input
         value={weightText}
+        placeholder="Weight"
         onChange={(event) => setWeightText(event.target.value)}
       />
-      {/* handleSave returns a promise; onClick wants nothing back. void says the
-    promise is ignored on purpose. */}
-      <button onClick={() => void handleSave()}>Save</button>
+      {/* The async handlers return a promise; onClick wants nothing back. void
+        says the promise is ignored on purpose. */}
+      <button onClick={() => void handleSaveWeight()}>Save Weight</button>
       <div>{localToday()}</div>
       <div>{message}</div>
       <div>
         {todayWeight !== null ? `${todayWeight} kg` : "No weigh in today"}
       </div>
+      <input
+        type="password"
+        value={tokenText}
+        placeholder="GitHub token"
+        onChange={(event) => setTokenText(event.target.value)}
+      />
+      <button onClick={handleSaveToken}>Save token</button>
+      <button onClick={() => void handleSync()}>Sync</button>
       <ul>
         {records.toReversed().map((record) => (
           <li key={record.date}>
