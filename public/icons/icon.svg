@@ -1,0 +1,34 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Background. It fills the whole square, because the phone trims the edges. -->
+  <rect width="512" height="512" fill="#1C2321"/>
+
+  <!-- Darker area under the line. It runs past the edges on purpose. -->
+  <path d="M-20 420 L186 328 L326 404 L532 308 V540 H-20 Z" fill="#2A3632"/>
+
+  <!-- Dial window. The stroke in the same colour rounds its corners. -->
+  <path d="M103.6 183.3 A186 186 0 0 1 408.4 183.3 L352.7 222.3 A118 118 0 0 0 159.3 222.3 Z"
+        fill="#EDEEE9" stroke="#EDEEE9" stroke-width="16" stroke-linejoin="round"/>
+
+  <!-- Tick marks on the dial. -->
+  <g stroke="#1C2321" stroke-width="14" stroke-linecap="round">
+    <line x1="165.5" y1="165.4" x2="153.7" y2="149.2"/>
+    <line x1="208.4" y1="143.5" x2="202.2" y2="124.5"/>
+    <line x1="256" y1="136" x2="256" y2="116"/>
+    <line x1="346.5" y1="165.4" x2="358.3" y2="149.2"/>
+  </g>
+
+  <!-- Pointer. -->
+  <path d="M281.3 170 L311.6 118.8 L306.1 178 Z"
+        fill="#FF7A6B" stroke="#FF7A6B" stroke-width="8" stroke-linejoin="round"/>
+
+  <!-- The line: green going up, coral going down. -->
+  <g fill="none" stroke-width="38" stroke-linecap="round">
+    <path d="M-20 420 L186 328" stroke="#3DDC97"/>
+    <path d="M186 328 L326 404" stroke="#FF7A6B"/>
+    <path d="M326 404 L532 308" stroke="#3DDC97"/>
+  </g>
+
+  <!-- Dots where the line turns. -->
+  <circle cx="186" cy="328" r="28" fill="#EDEEE9"/>
+  <circle cx="326" cy="404" r="28" fill="#EDEEE9"/>
+</svg>
