@@ -12,7 +12,12 @@ self.addEventListener("install", (event) => {
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
-      return cache.addAll(FILES);
+      // no-store skips the copy the browser keeps of a recent download. With
+      // that copy, a push soon after another saves the earlier page next to
+      // the new code file, and that page asks for a file that isn't saved.
+      return cache.addAll(
+        FILES.map((file) => new Request(file, { cache: "no-store" })),
+      );
     }),
   );
 });
