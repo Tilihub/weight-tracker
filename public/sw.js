@@ -1,16 +1,7 @@
-// service worker
-const CACHE_NAME = "weight-tracker-v9";
-
-const FILES = [
-  "./",
-  "./manifest.json",
-  "./assets/index-ZKq_9cjS.js",
-  "./index.html",
-  "./icons/icon-192.png",
-  "./icons/icon.svg",
-  "./icons/icon-maskable-512.png",
-  "./icons/icon-512.png",
-];
+// The service worker. VERSION and FILES are not declared in this file: the
+// build writes them above this code in dist/sw.js (workerFiles in
+// vite.config.ts).
+const CACHE_NAME = `weight-tracker-${VERSION}`;
 
 self.addEventListener("install", (event) => {
   self.skipWaiting();
