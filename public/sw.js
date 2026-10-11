@@ -1,13 +1,32 @@
 // The service worker. VERSION and FILES are not declared in this file: the
 // build writes them above this code in dist/sw.js (workerFiles in
 // vite.config.ts).
-const CACHE_NAME = `weight-tracker-${VERSION}`;
+const CACHE_PREFIX = "weight-tracker-";
+const CACHE_NAME = `${CACHE_PREFIX}${VERSION}`;
 
+// Saves every file of this build into this version's own cache. If one
+// download fails, the install fails and the previous version stays in charge.
 self.addEventListener("install", (event) => {
+  // Take over right after the install, instead of waiting until every page
+  // opened under the previous version is closed.
   self.skipWaiting();
   event.waitUntil(
     caches.open(CACHE_NAME).then((cache) => {
       return cache.addAll(FILES);
+    }),
+  );
+});
+
+// Runs when this version takes over. Deletes the caches of earlier versions,
+// and only caches with our prefix: other sites on the same origin share this
+// storage.
+self.addEventListener("activate", (event) => {
+  event.waitUntil(
+    caches.keys().then((names) => {
+      const oldNames = names.filter((name) => {
+        return name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME;
+      });
+      return Promise.all(oldNames.map((name) => caches.delete(name)));
     }),
   );
 });
