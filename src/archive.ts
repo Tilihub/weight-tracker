@@ -25,6 +25,24 @@ export class ArchiveChangedError extends Error {
   name = "ArchiveChangedError";
 }
 
+// The keys this version of the app knows, in the file and in each record.
+// Anything else stops the sync: the parser builds every row again from the
+// keys it knows, so an older copy of the app would write the archive back
+// without whatever a newer copy added.
+const ARCHIVE_KEYS = ["records", "goals"];
+const RECORD_KEYS = ["date", "weight", "modified"];
+
+// Throws when `value` has a key that isn't in `known`. `where` names the
+// place in the file for the message.
+function refuseUnknownKeys(value: object, known: string[], where: string) {
+  const unknownKey = Object.keys(value).find((key) => !known.includes(key));
+  if (unknownKey !== undefined) {
+    throw new Error(
+      `${where} has an unknown key "${unknownKey}": a typo in the file, or this copy of the app is out of date`,
+    );
+  }
+}
+
 // Turns the archive file's text into something the rest of the app can trust.
 // JSON.parse returns any, so every field is established by hand here.
 // Types only: whether a date is a real calendar date, whether a weight is
@@ -59,6 +77,7 @@ export function parseArchive(text: string): Archive {
   if (!("goals" in parsed)) {
     throw new Error("the archive must have goals");
   }
+  refuseUnknownKeys(parsed, ARCHIVE_KEYS, "the archive");
 
   // Array.isArray narrows to any[], which would make every element any and
   // silence the checks below. unknown[] forces each one to be narrowed.
@@ -74,6 +93,7 @@ export function parseArchive(text: string): Archive {
     if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
       throw new Error(`records[${i}] must be an object`);
     }
+    refuseUnknownKeys(entry, RECORD_KEYS, `records[${i}]`);
 
     if (!("date" in entry)) {
       throw new Error(`records[${i}] has no date`);
