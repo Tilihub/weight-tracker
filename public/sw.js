@@ -11,3 +11,26 @@ self.addEventListener("install", (event) => {
     }),
   );
 });
+
+// Answers the page's requests from the files this version saved, and asks
+// the network for anything that isn't saved. Requests to other sites, like
+// the sync's calls to GitHub, are left to the browser.
+self.addEventListener("fetch", (event) => {
+  const requestOrigin = new URL(event.request.url).origin;
+
+  if (requestOrigin !== self.location.origin) {
+    return;
+  }
+  event.respondWith(
+    caches
+      .open(CACHE_NAME)
+      .then((cache) => {
+        // ignoreVary: the preview server marks every answer as depending on
+        // the request's Origin header, and the lookup would miss the code file.
+        return cache.match(event.request, { ignoreVary: true });
+      })
+      .then((response) => {
+        return response ?? fetch(event.request);
+      }),
+  );
+});
