@@ -10,5 +10,12 @@
     "typescript/no-unsafe-member-access": "error",
     "typescript/await-thenable": "error"
   },
-  "ignorePatterns": ["sw.js"]
+  "overrides": [
+    {
+      "files": ["public/sw.js"],
+      "rules": {
+        "typescript/no-unsafe-member-access": "off"
+      }
+    }
+  ]
 }
