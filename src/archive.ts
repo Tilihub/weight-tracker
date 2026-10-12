@@ -11,6 +11,9 @@ const USERNAME = "Tilihub";
 const REPO = "weight-archive";
 const ARCHIVE_PATH = "archive.json";
 const ARCHIVE_URL = `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${ARCHIVE_PATH}`;
+// A call to GitHub that takes longer than this is cancelled. Without a limit,
+// a stalled connection on a weak signal leaves Sync waiting for minutes.
+const GITHUB_TIMEOUT_MS = 15000;
 
 // goals is unknown until the goals model exists. unknown rather than any, so
 // the first code to use it is forced to narrow instead of assuming.
@@ -143,9 +146,9 @@ export function serializeArchive(archive: Archive): string {
 // Resolves with the file's text, decoded from GitHub's base64, and its sha:
 // the version a write must name to replace it, so the two travel together.
 // Rejects on any non-2xx answer, on an answer that isn't a file, on content
-// that doesn't decode, and when there's no connection (fetch's own rejection,
-// passed through). The token is a parameter so it never sits in the source,
-// which ships to every visitor.
+// that doesn't decode, and when there's no connection or no answer in time
+// (fetch's own rejection, passed through). The token is a parameter so it
+// never sits in the source, which ships to every visitor.
 export async function readArchiveFile(
   token: string,
 ): Promise<{ text: string; sha: string }> {
@@ -154,6 +157,7 @@ export async function readArchiveFile(
     // GitHub marks these answers reusable for 60 seconds. Without no-store, a
     // read soon after a write can come from the browser's copy, old sha and all.
     cache: "no-store",
+    signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
   });
 
   // fetch resolves on error statuses too; only a missing answer rejects.
@@ -214,6 +218,7 @@ export async function writeArchiveFile(
     method: "PUT",
     body: JSON.stringify({ message: "Sync", content, sha }),
     headers: { ...githubHeaders(token), "Content-Type": "application/json" },
+    signal: AbortSignal.timeout(GITHUB_TIMEOUT_MS),
   });
 
   if (!response.ok) {
