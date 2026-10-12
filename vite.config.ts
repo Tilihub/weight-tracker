@@ -22,7 +22,7 @@ function workerFiles(): Plugin {
       const header =
         `const VERSION = ${JSON.stringify(version)};\n` +
         `const FILES = ${JSON.stringify(list)};\n`;
-      const worker = readFileSync("dist/sw.js", "utf-8");
+      const worker = readFileSync("dist/sw.js", "utf8");
       writeFileSync("dist/sw.js", header + worker);
     },
   };

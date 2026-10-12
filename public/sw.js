@@ -28,9 +28,9 @@ self.addEventListener("install", (event) => {
 self.addEventListener("activate", (event) => {
   event.waitUntil(
     caches.keys().then((names) => {
-      const oldNames = names.filter((name) => {
-        return name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME;
-      });
+      const oldNames = names.filter(
+        (name) => name.startsWith(CACHE_PREFIX) && name !== CACHE_NAME,
+      );
       return Promise.all(oldNames.map((name) => caches.delete(name)));
     }),
   );
@@ -40,7 +40,8 @@ self.addEventListener("activate", (event) => {
 // the network for anything that isn't saved. Requests to other sites, like
 // the sync's calls to GitHub, are left to the browser.
 self.addEventListener("fetch", (event) => {
-  const requestOrigin = new URL(event.request.url).origin;
+  const request = event.request;
+  const requestOrigin = new URL(request.url).origin;
 
   if (requestOrigin !== self.location.origin) {
     return;
@@ -51,10 +52,8 @@ self.addEventListener("fetch", (event) => {
       .then((cache) => {
         // ignoreVary: the preview server marks every answer as depending on
         // the request's Origin header, and the lookup would miss the code file.
-        return cache.match(event.request, { ignoreVary: true });
+        return cache.match(request, { ignoreVary: true });
       })
-      .then((response) => {
-        return response ?? fetch(event.request);
-      }),
+      .then((response) => response ?? fetch(request)),
   );
 });
