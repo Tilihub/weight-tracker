@@ -7,8 +7,8 @@ const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
 // Validators return null when valid, or a message string when not.
 // They never throw and never reject — the caller decides how to report.
-export function validateWeight(weight: unknown): string | null {
-  if (typeof weight !== "number" || !Number.isFinite(weight)) {
+export function validateWeight(weight: number): string | null {
+  if (!Number.isFinite(weight)) {
     return "weight must be a finite number";
   }
   if (weight < 20 || weight > 300) {
@@ -17,8 +17,8 @@ export function validateWeight(weight: unknown): string | null {
   return null;
 }
 
-export function validateDate(date: unknown): string | null {
-  if (typeof date !== "string" || !ISO_DATE.test(date)) {
+export function validateDate(date: string): string | null {
+  if (!ISO_DATE.test(date)) {
     return "date must be YYYY-MM-DD";
   }
   const [year, month, day] = date.split("-").map(Number);
@@ -33,13 +33,7 @@ export function validateDate(date: unknown): string | null {
 
 // `modified` is checked here because bulk writes take it from the caller,
 // and that caller's data can come from a file someone edited by hand.
-function validateRecord(record: unknown): string | null {
-  if (record === null || typeof record !== "object") {
-    return "record must be an object";
-  }
-  if (!("date" in record && "weight" in record && "modified" in record)) {
-    return "date, weight and modified must be present";
-  }
+function validateRecord(record: WeightRecord): string | null {
   const dateError = validateDate(record.date);
   if (dateError) {
     return dateError;
@@ -60,9 +54,6 @@ function validateRecord(record: unknown): string | null {
 }
 
 export function validateRecords(records: WeightRecord[]): string | null {
-  if (!Array.isArray(records)) {
-    return "records must be an array";
-  }
   const dates = new Set<string>();
   for (const [i, record] of records.entries()) {
     const recordError = validateRecord(record);
