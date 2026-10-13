@@ -49,7 +49,7 @@ function refuseUnknownKeys(value: object, known: string[], where: string) {
 // Turns the archive file's text into something the rest of the app can trust.
 // JSON.parse returns any, so every field is established by hand here.
 // Types only: whether a date is a real calendar date, whether a weight is
-// plausible and whether a date repeats stay with db.ts's validators, which
+// plausible and whether a date repeats stay with validate.ts's validators, which
 // still run on what this makes.
 // Throws on anything it can't establish — a partial archive read is worse than
 // a failed one, because it looks like it worked.

@@ -2,6 +2,7 @@
 // what's usual. No database here, so any file can import them.
 
 import type { WeightRecord } from "./db";
+import type { Phase } from "./goals";
 
 const ISO_DATE = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -67,5 +68,40 @@ export function validateRecords(records: WeightRecord[]): string | null {
     dates.add(record.date);
   }
 
+  return null;
+}
+
+function validatePhase(phase: Phase): string | null {
+  const startDateError = validateDate(phase.startDate);
+  if (startDateError) {
+    return `startDate: ${startDateError}`;
+  }
+  const endDateError = validateDate(phase.endDate);
+  if (endDateError) {
+    return `endDate: ${endDateError}`;
+  }
+  if (phase.startDate > phase.endDate) {
+    return "end date must be after start date";
+  }
+  const weightError = validateWeight(phase.startWeight);
+  if (weightError) {
+    return weightError;
+  }
+  if (!Number.isFinite(phase.weeklyRate)) {
+    return "weekly rate must be a finite number";
+  }
+  return null;
+}
+
+export function validatePhases(phases: Phase[]): string | null {
+  for (const [i, phase] of phases.entries()) {
+    const phaseError = validatePhase(phase);
+    if (phaseError) {
+      return `phases[${i}] raised an error because ${phaseError}`;
+    }
+    if (i > 0 && phase.startDate <= phases[i - 1].endDate) {
+      return `phases[${i}] start date must be after the previous phase's end date`;
+    }
+  }
   return null;
 }
