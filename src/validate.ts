@@ -80,7 +80,7 @@ function validatePhase(phase: Phase): string | null {
   if (endDateError) {
     return `endDate: ${endDateError}`;
   }
-  if (phase.startDate > phase.endDate) {
+  if (phase.startDate >= phase.endDate) {
     return "end date must be after start date";
   }
   const weightError = validateWeight(phase.startWeight);
