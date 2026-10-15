@@ -2,6 +2,7 @@
 // GitHub repo. This file owns its format and its trip to and from GitHub.
 
 import type { WeightRecord } from "./db";
+import type { Goals, Phase } from "./goals";
 import { errorToString } from "./errors";
 
 // Where the archive lives. A private repo, deliberately separate from this
@@ -11,15 +12,14 @@ const USERNAME = "Tilihub";
 const REPO = "weight-archive";
 const ARCHIVE_PATH = "archive.json";
 const ARCHIVE_URL = `https://api.github.com/repos/${USERNAME}/${REPO}/contents/${ARCHIVE_PATH}`;
+
 // A call to GitHub that takes longer than this is cancelled. Without a limit,
 // a stalled connection on a weak signal leaves Sync waiting for minutes.
 const GITHUB_TIMEOUT_MS = 15000;
 
-// goals is unknown until the goals model exists. unknown rather than any, so
-// the first code to use it is forced to narrow instead of assuming.
 export type Archive = {
   records: WeightRecord[];
-  goals: unknown;
+  goals: Goals;
 };
 
 // A 409: the archive changed after the write's sha was read. Its own class so
@@ -28,26 +28,18 @@ export class ArchiveChangedError extends Error {
   name = "ArchiveChangedError";
 }
 
-// The keys this version of the app knows, in the file and in each record.
-// Anything else stops the sync: the parser builds every row again from the
-// keys it knows, so an older copy of the app would write the archive back
-// without whatever a newer copy added.
+// The keys this version of the app knows: at the top of the file, in each
+// record, in goals and in each phase. Anything else stops the sync: the parser
+// builds everything again from the keys it knows, so an older copy of the app
+// would write the archive back without whatever a newer copy added.
 const ARCHIVE_KEYS = ["records", "goals"];
 const RECORD_KEYS = ["date", "weight", "modified"];
-
-// Throws when `value` has a key that isn't in `known`. `where` names the
-// place in the file for the message.
-function refuseUnknownKeys(value: object, known: string[], where: string) {
-  const unknownKey = Object.keys(value).find((key) => !known.includes(key));
-  if (unknownKey !== undefined) {
-    throw new Error(
-      `${where} has an unknown key "${unknownKey}": a typo in the file, or this copy of the app is out of date`,
-    );
-  }
-}
+const GOALS_KEYS = ["phases", "modified"];
+const PHASE_KEYS = ["startDate", "startWeight", "endDate", "weeklyRate"];
 
 // Turns the archive file's text into something the rest of the app can trust.
-// JSON.parse returns any, so every field is established by hand here.
+// JSON.parse returns any, so every field is established by hand, here and in
+// the functions below.
 // Types only: whether a date is a real calendar date, whether a weight is
 // plausible and whether a date repeats stay with validate.ts's validators, which
 // still run on what this makes.
@@ -67,52 +59,44 @@ export function parseArchive(text: string): Archive {
     throw new Error(`the file is not valid JSON: ${detail}`);
   }
 
-  // typeof null is "object", so null is ruled out separately.
-  if (parsed === null || typeof parsed !== "object") {
+  if (!isObject(parsed)) {
     throw new Error("the archive must be an object");
-  }
-  if (!("records" in parsed)) {
-    throw new Error("the archive must have a records array");
-  }
-  if (!Array.isArray(parsed.records)) {
-    throw new Error("records must be an array");
-  }
-  if (!("goals" in parsed)) {
-    throw new Error("the archive must have goals");
   }
   refuseUnknownKeys(parsed, ARCHIVE_KEYS, "the archive");
 
-  // Array.isArray narrows to any[], which would make every element any and
-  // silence the checks below. unknown[] forces each one to be narrowed.
-  const rawRecords: unknown[] = parsed.records;
+  const records = parseRecords(readArray(parsed, "records", "the archive"));
 
-  const records: WeightRecord[] = [];
+  if (!("goals" in parsed)) {
+    throw new Error("the archive must have goals");
+  }
+  const goals = parseGoals(parsed.goals);
 
+  return { records, goals };
+}
+
+// Each row checked for types and built again.
+function parseRecords(rawRecords: unknown[]): WeightRecord[] {
   // One stamp for the whole file: every record missing modified came from the
   // same hand edit, so separate times would imply an order that isn't real.
   const now = Date.now();
 
-  for (const [i, entry] of rawRecords.entries()) {
-    if (entry === null || typeof entry !== "object" || Array.isArray(entry)) {
-      throw new Error(`records[${i}] must be an object`);
+  const records: WeightRecord[] = [];
+  for (const [i, rawRecord] of rawRecords.entries()) {
+    const where = `records[${i}]`;
+    if (!isObject(rawRecord)) {
+      throw new Error(`${where} must be an object`);
     }
-    refuseUnknownKeys(entry, RECORD_KEYS, `records[${i}]`);
+    refuseUnknownKeys(rawRecord, RECORD_KEYS, where);
 
-    if (!("date" in entry)) {
-      throw new Error(`records[${i}] has no date`);
-    }
-    const date = entry.date;
-    if (typeof date !== "string") {
-      throw new Error(`records[${i}] date must be a string`);
-    }
+    const date = readString(rawRecord, "date", where);
 
-    if (!("weight" in entry)) {
-      throw new Error(`records[${i}] has no weight`);
-    }
-    const weight = entry.weight;
     // null is a deleted day.
+    if (!("weight" in rawRecord)) {
+      throw new Error(`${where} has no weight`);
+    }
+    const weight = rawRecord.weight;
     if (typeof weight !== "number" && weight !== null) {
-      throw new Error(`records[${i}] weight must be a number or null`);
+      throw new Error(`${where} weight must be a number or null`);
     }
 
     // Three outcomes, not two. Absent means a row added by hand and is
@@ -120,11 +104,8 @@ export function parseArchive(text: string): Archive {
     // Collapsing them would silently stamp over a typo like "1758499200000",
     // losing the archive's own timestamp without a word.
     let modified = now;
-    if ("modified" in entry) {
-      if (typeof entry.modified !== "number") {
-        throw new Error(`records[${i}] modified must be a number`);
-      }
-      modified = entry.modified;
+    if ("modified" in rawRecord) {
+      modified = readNumber(rawRecord, "modified", where);
     }
 
     // A new object rather than the parsed one: nothing handed in is mutated,
@@ -132,7 +113,97 @@ export function parseArchive(text: string): Archive {
     records.push({ date, weight, modified });
   }
 
-  return { records, goals: parsed.goals };
+  return records;
+}
+
+// Each phase checked for types and built again; validate.ts checks the values.
+function parseGoals(rawGoals: unknown): Goals {
+  if (!isObject(rawGoals)) {
+    throw new Error("goals must be an object");
+  }
+  refuseUnknownKeys(rawGoals, GOALS_KEYS, "goals");
+
+  const rawPhases = readArray(rawGoals, "phases", "goals");
+  const modified = readNumber(rawGoals, "modified", "goals");
+
+  const phases: Phase[] = [];
+  for (const [i, rawPhase] of rawPhases.entries()) {
+    const where = `goals.phases[${i}]`;
+    if (!isObject(rawPhase)) {
+      throw new Error(`${where} must be an object`);
+    }
+    refuseUnknownKeys(rawPhase, PHASE_KEYS, where);
+
+    const startDate = readString(rawPhase, "startDate", where);
+    const startWeight = readNumber(rawPhase, "startWeight", where);
+    const endDate = readString(rawPhase, "endDate", where);
+    const weeklyRate = readNumber(rawPhase, "weeklyRate", where);
+
+    phases.push({ startDate, startWeight, endDate, weeklyRate });
+  }
+
+  return { phases, modified };
+}
+
+// A plain object. typeof says "object" for null and arrays too, so both are
+// ruled out.
+function isObject(value: unknown): value is object {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+// Throws when `value` has a key that isn't in `known`. `where` names the
+// place in the file for the message.
+function refuseUnknownKeys(
+  value: object,
+  known: string[],
+  where: string,
+): void {
+  const unknownKey = Object.keys(value).find((key) => !known.includes(key));
+  if (unknownKey !== undefined) {
+    throw new Error(
+      `${where} has an unknown key "${unknownKey}": a typo in the file, or this copy of the app is out of date`,
+    );
+  }
+}
+
+// Reads a key that must hold a string, and returns it typed as one. Throws,
+// naming where and the key, when it's missing or not a string.
+function readString(object: object, key: string, where: string): string {
+  if (!(key in object)) {
+    throw new Error(`${where} has no ${key}`);
+  }
+  // Reflect.get reads a key held in a variable; object[key] isn't allowed on
+  // the plain object type.
+  const value: unknown = Reflect.get(object, key);
+  if (typeof value !== "string") {
+    throw new Error(`${where} ${key} must be a string`);
+  }
+  return value;
+}
+
+// The same as readString, for a number.
+function readNumber(object: object, key: string, where: string): number {
+  if (!(key in object)) {
+    throw new Error(`${where} has no ${key}`);
+  }
+  const value: unknown = Reflect.get(object, key);
+  if (typeof value !== "number") {
+    throw new Error(`${where} ${key} must be a number`);
+  }
+  return value;
+}
+
+// The same as readString, for an array. Typed unknown[], not the any[] that
+// Array.isArray gives, so every element still has to be checked.
+function readArray(object: object, key: string, where: string): unknown[] {
+  if (!(key in object)) {
+    throw new Error(`${where} has no ${key}`);
+  }
+  const value: unknown = Reflect.get(object, key);
+  if (!Array.isArray(value)) {
+    throw new Error(`${where} ${key} must be an array`);
+  }
+  return value;
 }
 
 // Indented so each record gets its own lines, and a commit's diff shows only
@@ -176,7 +247,7 @@ export async function readArchiveFile(
   // json() is typed any; unknown makes every field below prove itself first.
   const body: unknown = await response.json();
 
-  if (body === null || typeof body !== "object") {
+  if (!isObject(body)) {
     throw new Error("GitHub's answer isn't an object");
   }
   if (!("type" in body) || body.type !== "file") {

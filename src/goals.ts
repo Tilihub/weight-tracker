@@ -11,6 +11,11 @@ export type Phase = {
   weeklyRate: number;
 };
 
+export type Goals = {
+  phases: Phase[];
+  modified: number;
+};
+
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 // UTC midnight, so every day is exactly MS_PER_DAY long. In local time a day
